@@ -2,13 +2,14 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChefHat } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context/AuthContext';
 import { getErrorMessage } from '../api/client';
 import { authApi } from '../api/auth';
 import Alert from '../components/Alert';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -37,6 +38,17 @@ export default function LoginPage() {
       setError(getErrorMessage(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleGoogleSuccess(credentialResponse) {
+    setError('');
+    try {
+      await loginWithGoogle(credentialResponse.credential);
+      const redirectTo = location.state?.from?.pathname || '/tables';
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   }
 
@@ -102,6 +114,19 @@ export default function LoginPage() {
           <button type="submit" disabled={submitting} className="btn-primary w-full">
             {submitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
+
+          <div className="flex items-center gap-3 py-1">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs text-slate-400">hoặc</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={() => setError('Đăng nhập Google thất bại.')}
+            />
+          </div>
         </form>
 
         <p className="mt-5 text-center text-sm text-slate-500">

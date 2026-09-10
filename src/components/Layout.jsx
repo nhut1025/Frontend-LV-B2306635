@@ -1,6 +1,6 @@
 // src/components/Layout.jsx
 import { NavLink, useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, CalendarPlus } from 'lucide-react';
+import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, CalendarPlus, Users2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const navItems = [
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/tables', label: 'Sơ đồ bàn', icon: Grid3x3, roles: null }, // ai đăng nhập cũng xem được
   { to: '/reservations', label: 'Đặt bàn', icon: CalendarPlus, roles: ['customer'] },
   { to: '/profile', label: 'Hồ sơ cá nhân', icon: UserRound, roles: null },
+  { to: '/staff', label: 'Nhân sự', icon: Users2, roles: ['manager'] },
 ];
 
 export default function Layout({ children }) {

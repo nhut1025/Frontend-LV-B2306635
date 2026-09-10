@@ -15,7 +15,7 @@ const emptyForm = { name: '', description: '', price: '', category: '', image_ur
 export default function DishesPage() {
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
-  const canToggleAvailability = ['manager', 'staff', 'kitchen'].includes(user?.role);
+  const canToggleAvailability = ['manager', 'phuc_vu', 'kitchen'].includes(user?.role);
 
   const [dishes, setDishes] = useState([]);
   const [ingredients, setIngredients] = useState([]);

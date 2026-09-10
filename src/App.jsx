@@ -14,6 +14,8 @@ import TablesPage from './pages/TablesPage';
 import ProfilePage from './pages/ProfilePage';
 import ReservationPage from './pages/ReservationPage';
 import MyReservationsPage from './pages/MyReservationsPage';
+import StaffManagementPage from './pages/StaffManagementPage';
+
 
 export default function App() {
   return (
@@ -76,6 +78,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['customer']}>
                 <MyReservationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/staff"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <StaffManagementPage />
               </ProtectedRoute>
             }
           />
