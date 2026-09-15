@@ -15,7 +15,8 @@ import ProfilePage from './pages/ProfilePage';
 import ReservationPage from './pages/ReservationPage';
 import MyReservationsPage from './pages/MyReservationsPage';
 import StaffManagementPage from './pages/StaffManagementPage';
-
+import PendingDepositsPage from './pages/PendingDepositsPage';
+import BankSettingsPage from './pages/BankSettingsPage';
 
 export default function App() {
   return (
@@ -87,6 +88,24 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['manager']}>
                 <StaffManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/pending-deposits"
+            element={
+              <ProtectedRoute allowedRoles={['thu_ngan']}>
+                <PendingDepositsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/bank-settings"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <BankSettingsPage />
               </ProtectedRoute>
             }
           />

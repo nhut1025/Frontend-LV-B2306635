@@ -2,7 +2,7 @@
 //
 // Luồng: nhập party_size/ngày/giờ/SĐT -> "Tìm bàn trống" gọi suggest-tables
 // -> hiện gợi ý (1 bàn hoặc tổ hợp nhiều bàn ghép) -> "Giữ bàn" tạo hold (giu_tam)
-// -> đếm ngược 3 phút. Thanh toán cọc thực sự sẽ nối tiếp ở Phase 3.
+// -> hiện mã QR cọc, đếm ngược 3 phút, tự kiểm tra định kỳ xem thu ngân đã xác nhận chưa.
 
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -22,11 +22,14 @@ function formatCountdown(totalSeconds) {
 
 export default function ReservationPage() {
   const [form, setForm] = useState(emptyForm);
-  const [suggestion, setSuggestion] = useState(null); // { tables, is_combined, total_capacity }
+  const [suggestion, setSuggestion] = useState(null);
   const [searching, setSearching] = useState(false);
   const [holding, setHolding] = useState(false);
-  const [hold, setHold] = useState(null); // { reservation_id, hold_minutes }
+  const [hold, setHold] = useState(null);
   const [remainingSeconds, setRemainingSeconds] = useState(null);
+  const [depositQr, setDepositQr] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const expiryRef = useRef(null);
 
@@ -42,6 +45,33 @@ export default function ReservationPage() {
     const intervalId = setInterval(tick, 1000);
     return () => clearInterval(intervalId);
   }, [hold]);
+
+  useEffect(() => {
+    if (!hold) return;
+    setQrLoading(true);
+    reservationsApi
+      .getDepositQr(hold.reservation_id)
+      .then((res) => setDepositQr(res.data))
+      .catch((err) => setError(getErrorMessage(err)))
+      .finally(() => setQrLoading(false));
+  }, [hold]);
+
+  useEffect(() => {
+    if (!hold || confirmed || remainingSeconds === 0) return undefined;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await reservationsApi.getById(hold.reservation_id);
+        if (res.data.reservation.status === 'da_dat') {
+          setConfirmed(true);
+        }
+      } catch {
+        // bỏ qua lỗi tạm thời khi poll, không làm phiền người dùng
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [hold, confirmed, remainingSeconds]);
 
   function updateForm(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -85,7 +115,6 @@ export default function ReservationPage() {
       setHold(res.data);
     } catch (err) {
       setError(getErrorMessage(err));
-      // Bàn có thể vừa bị người khác giữ mất -> xoá gợi ý cũ để khách tìm lại
       setSuggestion(null);
     } finally {
       setHolding(false);
@@ -97,10 +126,12 @@ export default function ReservationPage() {
     setSuggestion(null);
     setHold(null);
     setRemainingSeconds(null);
+    setDepositQr(null);
+    setConfirmed(false);
     setError('');
   }
 
-  const expired = hold && remainingSeconds === 0;
+  const expired = hold && !confirmed && remainingSeconds === 0;
 
   return (
     <Layout>
@@ -202,21 +233,54 @@ export default function ReservationPage() {
         </div>
       )}
 
-      {hold && !expired && (
+      {hold && !expired && !confirmed && (
         <div className="card mt-5 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-saffron-50 text-saffron-600">
-            <Clock size={24} />
+          <h2 className="font-display text-lg font-semibold text-ink">Quét mã để thanh toán cọc</h2>
+          <p className="mt-1 text-sm text-slate-500">Mã đặt bàn #{hold.reservation_id}</p>
+
+          {qrLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="animate-spin text-slate-400" size={24} />
+            </div>
+          ) : depositQr ? (
+            <>
+              <img
+                src={depositQr.qr_url}
+                alt="Mã QR chuyển khoản cọc"
+                className="mx-auto mt-4 h-56 w-56 rounded-xl border border-slate-200"
+              />
+              <p className="mt-3 text-sm text-slate-600">
+                Số tiền: <span className="font-semibold text-ink">{Number(depositQr.amount).toLocaleString('vi-VN')}đ</span>
+              </p>
+              <p className="text-xs text-slate-400">Nội dung chuyển khoản: {depositQr.transaction_code}</p>
+            </>
+          ) : (
+            <p className="mt-4 text-sm text-clay-500">Chưa lấy được mã QR, thử tải lại trang.</p>
+          )}
+
+          <div className="mx-auto mt-5 flex w-fit items-center gap-2 rounded-full bg-saffron-50 px-4 py-2 text-saffron-700">
+            <Clock size={16} />
+            <span className="font-mono text-lg font-semibold">
+              {remainingSeconds !== null ? formatCountdown(remainingSeconds) : '--:--'}
+            </span>
           </div>
-          <h2 className="mt-3 font-display text-lg font-semibold text-ink">Đang giữ bàn cho bạn</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Mã đặt bàn #{hold.reservation_id}. Vui lòng hoàn tất cọc trước khi hết thời gian giữ.
+          <p className="mt-3 text-xs text-slate-400">
+            Sau khi chuyển khoản nếu không thấy bàn được xác nhận hãy liên hệ với quán để được hỗ trợ. <br/>
+            "Chuyển tiền cần có hình ảnh chuyển tiền làm minh chứng khi có vấn đề xảy ra"
           </p>
-          <p className="mt-4 font-mono text-3xl font-semibold text-saffron-600">
-            {remainingSeconds !== null ? formatCountdown(remainingSeconds) : '--:--'}
-          </p>
-          <p className="mt-4 text-xs text-slate-400">
-            Bước thanh toán cọc 50.000đ sẽ được bổ sung ở phần tiếp theo.
-          </p>
+        </div>
+      )}
+
+      {confirmed && (
+        <div className="card mt-5 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-basil-50 text-basil-600">
+            <CheckCircle2 size={24} />
+          </div>
+          <h2 className="mt-3 font-display text-lg font-semibold text-ink">Đặt bàn thành công!</h2>
+          <p className="mt-1 text-sm text-slate-500">Cọc đã được xác nhận. Hẹn gặp bạn tại quán.</p>
+          <button onClick={handleReset} className="btn-secondary mt-4">
+            Đặt bàn khác
+          </button>
         </div>
       )}
 

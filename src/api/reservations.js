@@ -7,4 +7,7 @@ export const reservationsApi = {
   createHold: (data) => client.post('/reservations', data),
   listMine: () => client.get('/reservations'),
   getById: (id) => client.get(`/reservations/${id}`),
+  getDepositQr: (id) => client.get(`/reservations/${id}/deposit-qr`),
+  listPendingDeposits: () => client.get('/reservations/pending-deposits'),
+  confirmDeposit: (id) => client.patch(`/reservations/${id}/confirm-deposit`),
 };
