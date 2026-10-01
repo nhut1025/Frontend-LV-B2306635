@@ -5,18 +5,19 @@
 // trạng thái bàn — ẩn dụ trực quan gắn với chủ đề quán ăn.
 
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound } from 'lucide-react';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import Alert from '../components/Alert';
 import { useAuth } from '../context/AuthContext';
 import { tablesApi } from '../api/tables';
+import { reservationsApi } from '../api/reservations';
 import { getErrorMessage } from '../api/client';
 
 const STATUS_CONFIG = {
   trong: { label: 'Trống', ring: 'bg-basil-50 border-basil-200', dot: 'bg-basil-500' },
   giu_tam: { label: 'Giữ tạm', ring: 'bg-saffron-50 border-saffron-400', dot: 'bg-saffron-500' },
-  da_dat: { label: 'Đã đặt', ring: 'bg-slate-50 border-slate-400', dot: 'bg-slate-500' },
+  da_dat: { label: 'Đã đặt', ring: 'bg-orange-50 border-orange-400', dot: 'bg-orange-500' },
   co_khach: { label: 'Có khách', ring: 'bg-clay-50 border-clay-400', dot: 'bg-clay-500' },
 };
 
@@ -25,15 +26,30 @@ const emptyForm = { table_number: '', capacity: '' };
 export default function TablesPage() {
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
+  const canOperateTables = user?.role === 'phuc_vu';
 
   const [tables, setTables] = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
+  const [confirmedArrivalIds, setConfirmedArrivalIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [actionId, setActionId] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+
+  const visibleUpcoming = upcoming.filter((reservation) => !confirmedArrivalIds.has(reservation.id));
+  const selectedReservation = selectedTable && upcoming.find((reservation) =>
+    String(reservation.table_ids || '')
+      .split(',')
+      .map((tableId) => tableId.trim())
+      .includes(String(selectedTable.id))
+  );
 
   async function loadTables() {
     setLoading(true);
@@ -48,9 +64,67 @@ export default function TablesPage() {
     }
   }
 
+  async function loadUpcoming() {
+    if (!canOperateTables) return;
+    setUpcomingLoading(true);
+    try {
+      const res = await reservationsApi.listUpcoming();
+      setUpcoming(res.data.upcoming || []);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setUpcomingLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadTables();
-  }, []);
+    loadUpcoming();
+  }, [canOperateTables]);
+
+  async function refreshOperationalData() {
+    await Promise.all([loadTables(), loadUpcoming()]);
+  }
+
+  async function handleTableAction(table) {
+    if (!canOperateTables || !['trong', 'co_khach'].includes(table.status)) return;
+    setActionId(`table-${table.id}`);
+    setError('');
+    setSuccess('');
+    try {
+      const res = table.status === 'trong'
+        ? await tablesApi.walkIn(table.id)
+        : await tablesApi.release(table.id);
+      setSuccess(res.data.message);
+      setSelectedTable(null);
+      await refreshOperationalData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleReservationAction(reservationId, action) {
+    if (action === 'cancel' && !confirm('Bạn có chắc muốn hủy đặt bàn này? Các bàn liên quan sẽ được giải phóng.')) return;
+    setActionId(`reservation-${reservationId}`);
+    setError('');
+    setSuccess('');
+    try {
+      const res = action === 'confirm'
+        ? await reservationsApi.confirmArrival(reservationId)
+        : await reservationsApi.cancelByStaff(reservationId);
+      setSuccess(res.data.message);
+      if (action === 'confirm') {
+        setConfirmedArrivalIds((ids) => new Set(ids).add(reservationId));
+      }
+      await refreshOperationalData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionId(null);
+    }
+  }
 
   function openCreateModal() {
     setEditingTable(null);
@@ -120,6 +194,7 @@ export default function TablesPage() {
       </div>
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
+      {success && <div className="mb-4"><Alert type="success">{success}</Alert></div>}
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -134,7 +209,12 @@ export default function TablesPage() {
             return (
               <div key={table.id} className="group flex flex-col items-center gap-2">
                 {/* "Khăn lót" — vòng ngoài trung tính */}
-                <div className="relative flex h-32 w-32 items-center justify-center rounded-full bg-slate-100 p-2.5 shadow-sm">
+                <div
+                  role="button"
+                  tabIndex="0"
+                  onClick={() => setSelectedTable(table)}
+                  className="relative flex h-32 w-32 items-center justify-center rounded-full bg-slate-100 p-2.5 shadow-sm transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-basil-400"
+                >
                   {/* "Đĩa" — vòng trong đổi màu theo trạng thái */}
                   <div className={`flex h-full w-full flex-col items-center justify-center rounded-full border-4 ${cfg.ring}`}>
                     <span className="font-mono text-lg font-semibold text-ink">{table.table_number}</span>
@@ -147,14 +227,14 @@ export default function TablesPage() {
                   {isManager && (
                     <div className="absolute -bottom-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                       <button
-                        onClick={() => openEditModal(table)}
+                        onClick={(event) => { event.stopPropagation(); openEditModal(table); }}
                         className="rounded-full bg-white p-1.5 text-slate-400 shadow hover:text-basil-600"
                         aria-label="Sửa bàn"
                       >
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => handleDelete(table)}
+                        onClick={(event) => { event.stopPropagation(); handleDelete(table); }}
                         className="rounded-full bg-white p-1.5 text-slate-400 shadow hover:text-clay-500"
                         aria-label="Xoá bàn"
                       >
@@ -168,6 +248,104 @@ export default function TablesPage() {
             );
           })}
         </div>
+      )}
+
+      {canOperateTables && (
+        <section className="mt-10">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-display text-xl font-semibold text-ink">Đặt bàn sắp tới</h2>
+              <p className="text-sm text-slate-500">Xác nhận khi khách đến hoặc hủy trực tiếp tại quầy</p>
+            </div>
+            <button type="button" onClick={loadUpcoming} className="btn-secondary" disabled={upcomingLoading}>
+              {upcomingLoading ? <Loader2 size={16} className="animate-spin" /> : <CalendarClock size={16} />}
+              Làm mới
+            </button>
+          </div>
+
+          {upcomingLoading ? (
+            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
+          ) : visibleUpcoming.length === 0 ? (
+            <div className="card text-center text-sm text-slate-500">Không có đặt bàn sắp tới.</div>
+          ) : (
+            <div className="space-y-3">
+              {visibleUpcoming.map((reservation) => (
+                <div key={reservation.id} className="card flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="flex items-center gap-2 font-medium text-ink">
+                      <UserRound size={16} /> {reservation.customer_name || 'Khách đặt bàn'}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                      <span><Users size={14} className="mr-1 inline" />{reservation.party_size} khách</span>
+                      <span><Phone size={14} className="mr-1 inline" />{reservation.phone}</span>
+                      <span>{reservation.reservation_date} lúc {reservation.reservation_time?.slice(0, 5)}</span>
+                      <span>Bàn {reservation.table_numbers || '—'}</span>
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleReservationAction(reservation.id, 'confirm')}
+                      disabled={actionId === `reservation-${reservation.id}`}
+                      className="btn-primary"
+                    >
+                      {actionId === `reservation-${reservation.id}` ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                      Xác nhận khách đến
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleReservationAction(reservation.id, 'cancel')}
+                      disabled={actionId === `reservation-${reservation.id}`}
+                      className="btn-secondary text-clay-600"
+                    >
+                      Hủy đặt bàn
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {selectedTable && (
+        <Modal title={`Bàn ${selectedTable.table_number}`} onClose={() => setSelectedTable(null)} widthClass="max-w-sm">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">Trạng thái</span>
+              <span className="font-medium text-ink">{STATUS_CONFIG[selectedTable.status]?.label || selectedTable.status}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">Sức chứa</span>
+              <span className="font-medium text-ink">{selectedTable.capacity} khách</span>
+            </div>
+
+            {selectedTable.status === 'giu_tam' && <Alert type="info">Đang giữ chỗ</Alert>}
+            {selectedTable.status === 'da_dat' && (
+              <div className="rounded-xl bg-orange-50 p-3 text-sm text-orange-800">
+                <p className="font-medium">Bàn đã có khách đặt</p>
+                {(selectedReservation?.customer_name || selectedTable.customer_name || selectedReservation?.phone || selectedTable.phone) && (
+                  <p className="mt-1">
+                    {selectedReservation?.customer_name || selectedTable.customer_name}
+                    {(selectedReservation?.phone || selectedTable.phone) && ` · ${selectedReservation?.phone || selectedTable.phone}`}
+                  </p>
+                )}
+              </div>
+            )}
+            {selectedTable.status === 'trong' && canOperateTables && (
+              <button type="button" onClick={() => handleTableAction(selectedTable)} disabled={actionId === `table-${selectedTable.id}`} className="btn-primary w-full">
+                {actionId === `table-${selectedTable.id}` && <Loader2 size={16} className="animate-spin" />}
+                Nhận khách vãng lai
+              </button>
+            )}
+            {selectedTable.status === 'co_khach' && canOperateTables && (
+              <button type="button" onClick={() => handleTableAction(selectedTable)} disabled={actionId === `table-${selectedTable.id}`} className="btn-primary w-full">
+                {actionId === `table-${selectedTable.id}` && <Loader2 size={16} className="animate-spin" />}
+                Trả bàn
+              </button>
+            )}
+          </div>
+        </Modal>
       )}
 
       {showModal && (

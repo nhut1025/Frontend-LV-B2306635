@@ -36,7 +36,14 @@ client.interceptors.response.use(
 
 // Helper rút gọn lấy message lỗi từ response, có fallback.
 export function getErrorMessage(err) {
-  return err.response?.data?.message || 'Có lỗi xảy ra, vui lòng thử lại.';
+  if (err.response?.data?.message) return err.response.data.message;
+  const statusMessages = {
+    400: 'Dữ liệu không hợp lệ.',
+    403: 'Bạn không có quyền thực hiện thao tác này.',
+    404: 'Không tìm thấy bàn hoặc đơn đặt bàn.',
+    409: 'Trạng thái hiện tại không hợp lệ để thực hiện thao tác.',
+  };
+  return statusMessages[err.response?.status] || 'Có lỗi xảy ra, vui lòng thử lại.';
 }
 
 export default client;
