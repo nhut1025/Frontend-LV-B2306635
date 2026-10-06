@@ -5,10 +5,11 @@
 // trạng thái bàn — ẩn dụ trực quan gắn với chủ đề quán ăn.
 
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound, UtensilsCrossed  } from 'lucide-react';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import Alert from '../components/Alert';
+import BillPanel from '../components/BillPanel';
 import { useAuth } from '../context/AuthContext';
 import { tablesApi } from '../api/tables';
 import { reservationsApi } from '../api/reservations';
@@ -37,13 +38,14 @@ export default function TablesPage() {
   const [success, setSuccess] = useState('');
   const [selectedTable, setSelectedTable] = useState(null);
   const [actionId, setActionId] = useState(null);
+  const [billTable, setBillTable] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
-  const visibleUpcoming = upcoming.filter((reservation) => !confirmedArrivalIds.has(reservation.id));
+  const visibleUpcoming = upcoming.filter((reservation) => !confirmedArrivalIds.has(String(reservation.id)));
   const selectedReservation = selectedTable && upcoming.find((reservation) =>
     String(reservation.table_ids || '')
       .split(',')
@@ -116,7 +118,11 @@ export default function TablesPage() {
         : await reservationsApi.cancelByStaff(reservationId);
       setSuccess(res.data.message);
       if (action === 'confirm') {
-        setConfirmedArrivalIds((ids) => new Set(ids).add(reservationId));
+        const confirmedId = String(reservationId);
+        setConfirmedArrivalIds((ids) => new Set(ids).add(confirmedId));
+        setUpcoming((reservations) => reservations.filter(
+          (reservation) => String(reservation.id) !== confirmedId
+        ));
       }
       await refreshOperationalData();
     } catch (err) {
@@ -257,7 +263,12 @@ export default function TablesPage() {
               <h2 className="font-display text-xl font-semibold text-ink">Đặt bàn sắp tới</h2>
               <p className="text-sm text-slate-500">Xác nhận khi khách đến hoặc hủy trực tiếp tại quầy</p>
             </div>
-            <button type="button" onClick={loadUpcoming} className="btn-secondary" disabled={upcomingLoading}>
+            <button
+              type="button"
+              onClick={() => { setSuccess(''); loadUpcoming(); }}
+              className="btn-secondary"
+              disabled={upcomingLoading}
+            >
               {upcomingLoading ? <Loader2 size={16} className="animate-spin" /> : <CalendarClock size={16} />}
               Làm mới
             </button>
@@ -339,12 +350,28 @@ export default function TablesPage() {
               </button>
             )}
             {selectedTable.status === 'co_khach' && canOperateTables && (
-              <button type="button" onClick={() => handleTableAction(selectedTable)} disabled={actionId === `table-${selectedTable.id}`} className="btn-primary w-full">
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => { setBillTable(selectedTable); setSelectedTable(null); }}
+                className="btn-primary w-full"
+              >
+                <UtensilsCrossed size={16} />
+                Gọi món
+              </button>
+              <button type="button" onClick={() => handleTableAction(selectedTable)} disabled={actionId === `table-${selectedTable.id}`} className="btn-secondary w-full">
                 {actionId === `table-${selectedTable.id}` && <Loader2 size={16} className="animate-spin" />}
                 Trả bàn
               </button>
-            )}
+            </div>
+          )}
           </div>
+        </Modal>
+      )}
+
+      {billTable && (
+        <Modal title={`Gọi món — Bàn ${billTable.table_number}`} onClose={() => setBillTable(null)} widthClass="max-w-md">
+          <BillPanel tableId={billTable.id} canEdit={canOperateTables} />
         </Modal>
       )}
 
