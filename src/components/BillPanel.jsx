@@ -95,6 +95,7 @@ export default function BillPanel({ tableId, canEdit = true }) {
   }
 
   const total = items.reduce((sum, item) => sum + Number(item.unit_price) * item.quantity, 0);
+  const paymentRequested = Boolean(bill?.payment_method);
 
   if (loading) {
     return (
@@ -107,6 +108,9 @@ export default function BillPanel({ tableId, canEdit = true }) {
   return (
     <div className="space-y-4">
       {error && <Alert type="error">{error}</Alert>}
+      {paymentRequested && (
+        <Alert type="info">Bill đã gửi yêu cầu thanh toán, tạm thời không thể thay đổi món.</Alert>
+      )}
 
       {items.length === 0 ? (
         <p className="text-center text-sm text-slate-500">Chưa gọi món nào.</p>
@@ -123,7 +127,7 @@ export default function BillPanel({ tableId, canEdit = true }) {
                   {item.note && ` · ${item.note}`}
                 </p>
               </div>
-              {canEdit && item.status === 'cho_xac_nhan' && (
+              {canEdit && !paymentRequested && item.status === 'cho_xac_nhan' && (
                 <button
                   type="button"
                   onClick={() => handleRemoveItem(item.id)}
@@ -144,7 +148,7 @@ export default function BillPanel({ tableId, canEdit = true }) {
         <span>{total.toLocaleString('vi-VN')}đ</span>
       </div>
 
-      {canEdit && (
+      {canEdit && !paymentRequested && (
         <form onSubmit={handleAddItem} className="space-y-2 border-t border-slate-200 pt-3">
           <div className="flex gap-2">
             <select

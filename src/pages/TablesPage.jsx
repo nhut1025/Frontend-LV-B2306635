@@ -5,15 +5,18 @@
 // trạng thái bàn — ẩn dụ trực quan gắn với chủ đề quán ăn.
 
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound, UtensilsCrossed  } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound, UtensilsCrossed } from 'lucide-react';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import Alert from '../components/Alert';
 import BillPanel from '../components/BillPanel';
 import ReadyItemsPanel from '../components/ReadyItemsPanel';
+import WaiterPaymentModal from '../components/WaiterPaymentModal';
 import { useAuth } from '../context/AuthContext';
 import { tablesApi } from '../api/tables';
+import { billsApi } from '../api/bills';
 import { reservationsApi } from '../api/reservations';
+import { createSocket } from '../api/socket';
 import { getErrorMessage } from '../api/client';
 
 const STATUS_CONFIG = {
@@ -40,6 +43,7 @@ export default function TablesPage() {
   const [selectedTable, setSelectedTable] = useState(null);
   const [actionId, setActionId] = useState(null);
   const [billTable, setBillTable] = useState(null);
+  const [paymentTable, setPaymentTable] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
@@ -85,6 +89,18 @@ export default function TablesPage() {
     loadUpcoming();
   }, [canOperateTables]);
 
+  useEffect(() => {
+    if (!canOperateTables) return undefined;
+    const socket = createSocket();
+    socket.on('service:bill-paid', (bill) => {
+      sessionStorage.removeItem(`payment-request-${bill.bill_id}`);
+      setPaymentTable((current) => (current?.bill.id === bill.bill_id ? null : current));
+      setSuccess(`Bàn ${bill.table_id}: thu ngân đã xác nhận thanh toán. Khách có thể rời bàn.`);
+      refreshOperationalData();
+    });
+    return () => socket.disconnect();
+  }, [canOperateTables]);
+
   async function refreshOperationalData() {
     await Promise.all([loadTables(), loadUpcoming()]);
   }
@@ -95,9 +111,27 @@ export default function TablesPage() {
     setError('');
     setSuccess('');
     try {
-      const res = table.status === 'trong'
-        ? await tablesApi.walkIn(table.id)
-        : await tablesApi.release(table.id);
+      if (table.status === 'co_khach') {
+        let billData;
+        try {
+          const billRes = await billsApi.getByTable(table.id);
+          billData = billRes.data;
+        } catch (err) {
+          if (err.response?.status !== 404) throw err;
+        }
+        if ((billData?.items || []).length > 0) {
+          setPaymentTable({ table, bill: billData.bill, items: billData.items });
+          setSelectedTable(null);
+          return;
+        }
+        const releaseRes = await tablesApi.release(table.id);
+        setSuccess(releaseRes.data.message);
+        setSelectedTable(null);
+        await refreshOperationalData();
+        return;
+      }
+
+      const res = await tablesApi.walkIn(table.id);
       setSuccess(res.data.message);
       setSelectedTable(null);
       await refreshOperationalData();
@@ -363,7 +397,7 @@ export default function TablesPage() {
               </button>
               <button type="button" onClick={() => handleTableAction(selectedTable)} disabled={actionId === `table-${selectedTable.id}`} className="btn-secondary w-full">
                 {actionId === `table-${selectedTable.id}` && <Loader2 size={16} className="animate-spin" />}
-                Trả bàn
+                Trả bàn / thanh toán
               </button>
             </div>
           )}
@@ -375,6 +409,15 @@ export default function TablesPage() {
         <Modal title={`Gọi món — Bàn ${billTable.table_number}`} onClose={() => setBillTable(null)} widthClass="max-w-md">
           <BillPanel tableId={billTable.id} canEdit={canOperateTables} />
         </Modal>
+      )}
+
+      {paymentTable && (
+        <WaiterPaymentModal
+          table={paymentTable.table}
+          bill={paymentTable.bill}
+          items={paymentTable.items}
+          onClose={() => setPaymentTable(null)}
+        />
       )}
 
       {showModal && (

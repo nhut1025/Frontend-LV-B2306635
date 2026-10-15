@@ -15,6 +15,8 @@ export const billsApi = {
   payable: () => client.get('/bills/payable'),
   paymentSummary: (billId) => client.get(`/bills/${billId}/payment-summary`),
   paymentQr: (billId) => client.get(`/bills/${billId}/payment-qr`),
+  requestPayment: (billId, paymentMethod) =>
+    client.post(`/bills/${billId}/payment-request`, { payment_method: paymentMethod }),
   pay: (billId, paymentMethod) => client.patch(`/bills/${billId}/pay`, { payment_method: paymentMethod }),
 };
 

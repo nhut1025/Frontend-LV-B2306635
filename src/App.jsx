@@ -19,6 +19,7 @@ import PendingDepositsPage from './pages/PendingDepositsPage';
 import BankSettingsPage from './pages/BankSettingsPage';
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
+import FinancePage from './pages/FinancePage';
 
 // Trang chủ mặc định theo vai trò: bếp vào thẳng màn hình bếp, các vai trò khác vào sơ đồ bàn.
 function HomeRedirect() {
@@ -124,6 +125,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['thu_ngan']}>
                 <PaymentsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/finance"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <FinancePage />
               </ProtectedRoute>
             }
           />

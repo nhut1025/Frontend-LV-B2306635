@@ -10,6 +10,7 @@ import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import Alert from '../components/Alert';
 import { billsApi } from '../api/bills';
+import { createSocket } from '../api/socket';
 import { getErrorMessage } from '../api/client';
 
 const money = (value) => `${Number(value).toLocaleString('vi-VN')}đ`;
@@ -32,6 +33,7 @@ function PaymentModal({ billId, onClose, onPaid }) {
   const [method, setMethod] = useState(null); // null | 'tien_mat' | 'online'
   const [qr, setQr] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [choosingMethod, setChoosingMethod] = useState(false);
   const [paying, setPaying] = useState(false);
 
   useEffect(() => {
@@ -39,11 +41,21 @@ function PaymentModal({ billId, onClose, onPaid }) {
     async function load() {
       try {
         const res = await billsApi.paymentSummary(billId);
-        if (!cancelled) setData(res.data);
+        if (cancelled) return;
+        setData(res.data);
+        setMethod(res.data.bill.payment_method || null);
+        if (res.data.bill.payment_method === 'online' && res.data.summary.amount_due > 0) {
+          setQrLoading(true);
+          const qrRes = await billsApi.paymentQr(billId);
+          if (!cancelled) setQr(qrRes.data);
+        }
       } catch (err) {
         if (!cancelled) setError(getErrorMessage(err));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setQrLoading(false);
+        }
       }
     }
     load();
@@ -53,19 +65,27 @@ function PaymentModal({ billId, onClose, onPaid }) {
   }, [billId]);
 
   async function chooseMethod(next) {
-    setMethod(next);
+    setChoosingMethod(true);
     setError('');
-    if (next === 'online' && !qr) {
-      setQrLoading(true);
-      try {
-        const res = await billsApi.paymentQr(billId);
-        setQr(res.data);
-      } catch (err) {
-        setError(getErrorMessage(err));
-        setMethod(null); // QR lỗi (VD quán chưa cấu hình ngân hàng) -> cho chọn lại tiền mặt
-      } finally {
-        setQrLoading(false);
-      }
+    setQrLoading(next === 'online');
+    try {
+      const res = await billsApi.requestPayment(billId, next);
+      setMethod(next);
+      setData((current) => ({
+        ...current,
+        bill: { ...current.bill, payment_method: next, payment_code: res.data.payment_code },
+        summary: res.data.summary,
+      }));
+      setQr(res.data.qr_url ? {
+        amount: res.data.summary.amount_due,
+        payment_code: res.data.payment_code,
+        qr_url: res.data.qr_url,
+      } : null);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setChoosingMethod(false);
+      setQrLoading(false);
     }
   }
 
@@ -110,6 +130,11 @@ function PaymentModal({ billId, onClose, onPaid }) {
         <div className="space-y-4">
           {error && <Alert type="error">{error}</Alert>}
           {!isOpen && <Alert type="error">Bill này đã được thanh toán rồi.</Alert>}
+          {isOpen && bill.payment_method && (
+            <Alert type="info">
+              Phương thức đã chọn: {bill.payment_method === 'online' ? 'chuyển khoản' : 'tiền mặt'}. Chỉ xác nhận sau khi đã kiểm tra nhận đủ tiền.
+            </Alert>
+          )}
           {isOpen && summary.unserved_count > 0 && (
             <Alert type="error">
               Còn {summary.unserved_count} món chưa phục vụ xong, chưa thể thanh toán. Nhờ phục vụ mang món ra trước.
@@ -161,24 +186,31 @@ function PaymentModal({ billId, onClose, onPaid }) {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => chooseMethod('tien_mat')}
-                    className={method === 'tien_mat' ? 'btn-primary' : 'btn-secondary'}
-                  >
-                    <Banknote size={16} />
-                    Tiền mặt
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => chooseMethod('online')}
-                    className={method === 'online' ? 'btn-primary' : 'btn-secondary'}
-                  >
-                    <QrCode size={16} />
-                    Chuyển khoản QR
-                  </button>
-                </div>
+                {!bill.payment_method && (
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-ink">Khách thanh toán tại quầy bằng cách nào?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => chooseMethod('tien_mat')}
+                        disabled={choosingMethod}
+                        className={method === 'tien_mat' ? 'btn-primary' : 'btn-secondary'}
+                      >
+                        <Banknote size={16} />
+                        Tiền mặt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => chooseMethod('online')}
+                        disabled={choosingMethod}
+                        className={method === 'online' ? 'btn-primary' : 'btn-secondary'}
+                      >
+                        <QrCode size={16} />
+                        Chuyển khoản QR
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {method === 'tien_mat' && (
                   <div className="space-y-2 rounded-xl bg-slate-50 p-3 text-center">
@@ -186,7 +218,7 @@ function PaymentModal({ billId, onClose, onPaid }) {
                     <p className="font-display text-2xl font-semibold text-ink">{money(summary.amount_due)}</p>
                     <button type="button" disabled={paying} onClick={() => handlePay('tien_mat')} className="btn-primary w-full">
                       {paying ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                      Xác nhận đã thu tiền mặt
+                      Xác nhận đã nhận tiền mặt
                     </button>
                   </div>
                 )}
@@ -213,7 +245,7 @@ function PaymentModal({ billId, onClose, onPaid }) {
                         </p>
                         <button type="button" disabled={paying} onClick={() => handlePay('online')} className="btn-primary w-full">
                           {paying ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                          Xác nhận đã nhận tiền
+                          Xác nhận đã nhận chuyển khoản
                         </button>
                       </div>
                     )
@@ -228,6 +260,7 @@ function PaymentModal({ billId, onClose, onPaid }) {
 
 function BillCard({ bill, onOpen }) {
   const isReady = bill.unserved_count === 0;
+  const isPaymentRequested = Boolean(bill.payment_method);
   return (
     <div className="card flex flex-wrap items-center justify-between gap-4">
       <div>
@@ -246,10 +279,15 @@ function BillCard({ bill, onOpen }) {
         <p className="mt-1 text-sm">
           Còn phải thu: <span className="font-semibold text-ink">{money(bill.amount_due)}</span>
         </p>
+        {isPaymentRequested && (
+          <p className="mt-1 inline-flex rounded-full bg-saffron-50 px-2.5 py-1 text-xs font-medium text-saffron-700">
+            Chờ xác nhận đã nhận tiền · {bill.payment_method === 'online' ? 'Chuyển khoản' : 'Tiền mặt'}
+          </p>
+        )}
         {!isReady && <p className="mt-1 text-xs text-clay-600">Còn {bill.unserved_count} món chưa phục vụ xong</p>}
       </div>
       <button type="button" onClick={() => onOpen(bill.bill_id)} className={isReady ? 'btn-primary' : 'btn-secondary'}>
-        {isReady ? 'Thanh toán' : 'Xem bill'}
+        {isPaymentRequested ? 'Xác nhận đã nhận tiền' : isReady ? 'Thanh toán tại quầy' : 'Xem bill'}
       </button>
     </div>
   );
@@ -281,6 +319,17 @@ export default function PaymentsPage() {
     return () => clearInterval(intervalId);
   }, [loadBills]);
 
+  useEffect(() => {
+    const socket = createSocket();
+    socket.on('cashier:payment-requested', (request) => {
+      setNotice(
+        `Bàn ${request.table_number}: có yêu cầu thanh toán mới (${request.payment_method === 'online' ? 'chuyển khoản' : 'tiền mặt'}).`
+      );
+      loadBills();
+    });
+    return () => socket.disconnect();
+  }, [loadBills]);
+
   function handleOpen(billId) {
     setNotice('');
     setSelectedBillId(billId);
@@ -299,7 +348,7 @@ export default function PaymentsPage() {
     <Layout>
       <div className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-ink">Thanh toán bill</h1>
-        <p className="text-sm text-slate-500">Chọn bàn, kiểm tra bill rồi xác nhận đã thu tiền</p>
+        <p className="text-sm text-slate-500">Nhận yêu cầu từ phục vụ hoặc chọn bill tại quầy, rồi xác nhận đã thu tiền</p>
       </div>
 
       <div className="mb-4 space-y-2">

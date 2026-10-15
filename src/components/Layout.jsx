@@ -15,6 +15,7 @@ const navItems = [
   { to: '/staff', label: 'Nhân sự', icon: Users2, roles: ['manager'] },
   { to: '/pending-deposits', label: 'Cọc chờ xác nhận', icon: Receipt, roles: ['thu_ngan'], badge: 'deposits' },
   { to: '/payments', label: 'Thanh toán bill', icon: Banknote, roles: ['thu_ngan'], badge: 'bills' },
+  { to: '/finance', label: 'Thu chi', icon: Banknote, roles: ['manager'] },
   { to: '/bank-settings', label: 'Tài khoản nhận cọc', icon: Landmark, roles: ['manager'] },
 ];
 
