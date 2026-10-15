@@ -28,8 +28,9 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      await login(email, password);
-      const redirectTo = location.state?.from?.pathname || '/tables';
+      const loggedInUser = await login(email, password);
+      const defaultHome = loggedInUser.role === 'kitchen' ? '/kitchen' : '/tables';
+      const redirectTo = location.state?.from?.pathname || defaultHome;
       navigate(redirectTo, { replace: true });
     } catch (err) {
       if (err.response?.data?.code === 'EMAIL_NOT_VERIFIED') {

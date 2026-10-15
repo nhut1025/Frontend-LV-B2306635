@@ -1,6 +1,6 @@
 // src/App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import LoginPage from './pages/LoginPage';
@@ -17,6 +17,15 @@ import MyReservationsPage from './pages/MyReservationsPage';
 import StaffManagementPage from './pages/StaffManagementPage';
 import PendingDepositsPage from './pages/PendingDepositsPage';
 import BankSettingsPage from './pages/BankSettingsPage';
+import KitchenPage from './pages/KitchenPage';
+import PaymentsPage from './pages/PaymentsPage';
+
+// Trang chủ mặc định theo vai trò: bếp vào thẳng màn hình bếp, các vai trò khác vào sơ đồ bàn.
+function HomeRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return <Navigate to={user?.role === 'kitchen' ? '/kitchen' : '/tables'} replace />;
+}
 
 export default function App() {
   return (
@@ -59,7 +68,7 @@ export default function App() {
           <Route
             path="/tables"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['customer', 'phuc_vu', 'thu_ngan', 'manager']}>
                 <TablesPage />
               </ProtectedRoute>
             }
@@ -110,8 +119,26 @@ export default function App() {
             }
           />
 
-          <Route path="/" element={<Navigate to="/tables" replace />} />
-          <Route path="*" element={<Navigate to="/tables" replace />} />
+          <Route
+            path="/payments"
+            element={
+              <ProtectedRoute allowedRoles={['thu_ngan']}>
+                <PaymentsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/kitchen"
+            element={
+              <ProtectedRoute allowedRoles={['kitchen']}>
+                <KitchenPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="*" element={<HomeRedirect />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

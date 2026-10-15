@@ -10,6 +10,7 @@ import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import Alert from '../components/Alert';
 import BillPanel from '../components/BillPanel';
+import ReadyItemsPanel from '../components/ReadyItemsPanel';
 import { useAuth } from '../context/AuthContext';
 import { tablesApi } from '../api/tables';
 import { reservationsApi } from '../api/reservations';
@@ -201,6 +202,7 @@ export default function TablesPage() {
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
       {success && <div className="mb-4"><Alert type="success">{success}</Alert></div>}
+      {canOperateTables && <ReadyItemsPanel />}
 
       {loading ? (
         <div className="flex justify-center py-16">

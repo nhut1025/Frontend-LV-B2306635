@@ -12,6 +12,11 @@ import { getErrorMessage } from '../api/client';
 
 const emptyForm = { name: '', description: '', price: '', category: '', image_url: '', ingredient_ids: [] };
 
+function formatPrice(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('vi-VN') : '';
+}
+
 export default function DishesPage() {
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
@@ -29,6 +34,10 @@ export default function DishesPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [newIngredientName, setNewIngredientName] = useState('');
+  const [ingredientSearch, setIngredientSearch] = useState('');
+  const [dishIngredientName, setDishIngredientName] = useState('');
+  const [addingDishIngredient, setAddingDishIngredient] = useState(false);
+  const [dishIngredientError, setDishIngredientError] = useState('');
 
   async function loadAll() {
     setLoading(true);
@@ -61,7 +70,7 @@ export default function DishesPage() {
     setForm({
       name: dish.name,
       description: dish.description || '',
-      price: dish.price,
+      price: formatPrice(dish.price),
       category: dish.category || '',
       image_url: dish.image_url || '',
       ingredient_ids: (dish.ingredients || []).map((i) => i.id),
@@ -108,7 +117,7 @@ export default function DishesPage() {
     setSaving(true);
     setError('');
     try {
-      const payload = { ...form, price: Number(form.price) };
+      const payload = { ...form, price: Number(form.price.replace(/\D/g, '')) };
       if (editingDish) {
         await dishesApi.update(editingDish.id, payload);
       } else {
@@ -152,6 +161,34 @@ export default function DishesPage() {
       setIngredients(res.data.ingredients);
     } catch (err) {
       setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleAddIngredientToDish() {
+    const name = dishIngredientName.trim();
+    if (!name || addingDishIngredient) return;
+    setAddingDishIngredient(true);
+    setDishIngredientError('');
+    try {
+      await ingredientsApi.create(name);
+      const res = await ingredientsApi.list();
+      const updatedIngredients = res.data.ingredients;
+      const addedIngredient = updatedIngredients.find((ingredient) => ingredient.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+      setIngredients(updatedIngredients);
+      if (addedIngredient) {
+        setForm((current) => ({
+          ...current,
+          ingredient_ids: current.ingredient_ids.includes(addedIngredient.id)
+            ? current.ingredient_ids
+            : [...current.ingredient_ids, addedIngredient.id],
+        }));
+      }
+      setDishIngredientName('');
+      setIngredientSearch('');
+    } catch (err) {
+      setDishIngredientError(getErrorMessage(err));
+    } finally {
+      setAddingDishIngredient(false);
     }
   }
 
@@ -312,11 +349,11 @@ export default function DishesPage() {
               <div>
                 <label className="field-label">Giá (VNĐ)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  min="0"
                   value={form.price}
-                  onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, price: formatPrice(e.target.value) }))}
                   className="field-input"
                 />
               </div>
@@ -367,9 +404,45 @@ export default function DishesPage() {
 
             <div>
               <label className="field-label">Nguyên liệu</label>
+              <div className="mb-2 flex gap-2">
+                <input
+                  value={dishIngredientName}
+                  onChange={(e) => setDishIngredientName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddIngredientToDish();
+                    }
+                  }}
+                  placeholder="Thêm nguyên liệu mới"
+                  className="field-input flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddIngredientToDish}
+                  disabled={!dishIngredientName.trim() || addingDishIngredient}
+                  className="btn-secondary px-3"
+                  aria-label="Thêm nguyên liệu"
+                >
+                  {addingDishIngredient ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                </button>
+              </div>
+              {dishIngredientError && <p className="mb-2 text-xs text-clay-600">{dishIngredientError}</p>}
+              <input
+                value={ingredientSearch}
+                onChange={(e) => setIngredientSearch(e.target.value)}
+                placeholder="Tìm trong danh sách nguyên liệu"
+                className="field-input mb-2"
+              />
               <div className="max-h-36 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-                {ingredients.length === 0 && <p className="px-1 text-xs text-slate-400">Chưa có nguyên liệu nào.</p>}
-                {ingredients.map((ing) => (
+                {ingredients.filter((ing) => ing.name.toLocaleLowerCase().includes(ingredientSearch.trim().toLocaleLowerCase())).length === 0 && (
+                  <p className="px-1 text-xs text-slate-400">
+                    {ingredients.length === 0 ? 'Chưa có nguyên liệu nào.' : 'Không tìm thấy nguyên liệu.'}
+                  </p>
+                )}
+                {ingredients
+                  .filter((ing) => ing.name.toLocaleLowerCase().includes(ingredientSearch.trim().toLocaleLowerCase()))
+                  .map((ing) => (
                   <label key={ing.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-slate-50">
                     <input
                       type="checkbox"
@@ -379,7 +452,7 @@ export default function DishesPage() {
                     />
                     {ing.name}
                   </label>
-                ))}
+                  ))}
               </div>
             </div>
 
