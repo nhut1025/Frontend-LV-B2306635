@@ -12,10 +12,10 @@ import DishesPage from './pages/DishesPage';
 import DishDetailPage from './pages/DishDetailPage';
 import TablesPage from './pages/TablesPage';
 import ProfilePage from './pages/ProfilePage';
-import ReservationPage from './pages/ReservationPage';
 import MyReservationsPage from './pages/MyReservationsPage';
 import StaffManagementPage from './pages/StaffManagementPage';
 import PendingDepositsPage from './pages/PendingDepositsPage';
+import PendingPreordersPage from './pages/PendingPreordersPage';
 import BankSettingsPage from './pages/BankSettingsPage';
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
@@ -77,11 +77,7 @@ export default function App() {
 
           <Route
             path="/reservations"
-            element={
-              <ProtectedRoute allowedRoles={['customer']}>
-                <ReservationPage />
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/tables" replace />}
           />
 
           <Route
@@ -107,6 +103,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['thu_ngan']}>
                 <PendingDepositsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/pending-preorders"
+            element={
+              <ProtectedRoute allowedRoles={['thu_ngan']}>
+                <PendingPreordersPage />
               </ProtectedRoute>
             }
           />

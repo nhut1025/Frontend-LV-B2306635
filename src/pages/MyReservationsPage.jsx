@@ -1,7 +1,7 @@
 // src/pages/MyReservationsPage.jsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, UtensilsCrossed } from 'lucide-react';
 import Layout from '../components/Layout';
 import Alert from '../components/Alert';
 import { reservationsApi } from '../api/reservations';
@@ -19,12 +19,25 @@ export default function MyReservationsPage() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [preorders, setPreorders] = useState({});
 
   useEffect(() => {
     async function load() {
       try {
         const res = await reservationsApi.listMine();
-        setReservations(res.data.reservations);
+        const mine = res.data.reservations || [];
+        setReservations(mine);
+        const results = await Promise.all(mine.map(async (reservation) => {
+          try {
+            const preorderRes = await reservationsApi.getPreorder(reservation.id);
+            const preorder = preorderRes.data.preorder || preorderRes.data;
+            return [reservation.id, preorder];
+          } catch (preorderError) {
+            if (preorderError.response?.status === 404) return [reservation.id, null];
+            throw preorderError;
+          }
+        }));
+        setPreorders(Object.fromEntries(results.filter(([, preorder]) => preorder)));
       } catch (err) {
         setError(getErrorMessage(err));
       } finally {
@@ -68,6 +81,24 @@ export default function MyReservationsPage() {
                   <p className="mt-0.5 text-sm text-slate-500">
                     {r.party_size} khách · Bàn: {r.table_ids || '—'} · SĐT: {r.phone}
                   </p>
+                  {(() => {
+                    const preorder = preorders[r.id];
+                    const items = preorder?.items || preorder?.preorder_items || [];
+                    if (!items.length) return null;
+                    return (
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-ink"><UtensilsCrossed size={14} />Món đặt trước</p>
+                        <ul className="space-y-1 text-sm text-slate-600">
+                          {items.map((item, index) => (
+                            <li key={item.id || `${item.dish_id}-${index}`}>
+                              {item.dish_name || item.name || `Món #${item.dish_id}`} × {item.quantity}
+                              {item.note && <span className="text-slate-400"> · {item.note}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.badge}`}>{cfg.label}</span>
               </div>

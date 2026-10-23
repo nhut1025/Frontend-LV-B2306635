@@ -1,28 +1,29 @@
 // src/components/Layout.jsx
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, CalendarPlus, Users2, Receipt, Landmark, Flame, Banknote } from 'lucide-react';
+import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
 
 const navItems = [
   { to: '/dishes', label: 'Món ăn', icon: UtensilsCrossed, roles: null },
-  { to: '/tables', label: 'Sơ đồ bàn', icon: Grid3x3, roles: ['customer', 'phuc_vu', 'thu_ngan', 'manager'] },
+  { to: '/tables', label: 'Bàn & đặt bàn', icon: Grid3x3, roles: ['customer'] },
+  { to: '/tables', label: 'Sơ đồ bàn', icon: Grid3x3, roles: ['phuc_vu', 'thu_ngan', 'manager'] },
   { to: '/kitchen', label: 'Màn hình bếp', icon: Flame, roles: ['kitchen'] },
-  { to: '/reservations', label: 'Đặt bàn', icon: CalendarPlus, roles: ['customer'] },
   { to: '/profile', label: 'Hồ sơ cá nhân', icon: UserRound, roles: null },
   { to: '/staff', label: 'Nhân sự', icon: Users2, roles: ['manager'] },
   { to: '/pending-deposits', label: 'Cọc chờ xác nhận', icon: Receipt, roles: ['thu_ngan'], badge: 'deposits' },
+  { to: '/pending-preorders', label: 'Món đặt trước', icon: PhoneCall, roles: ['thu_ngan'], badge: 'preorders' },
   { to: '/payments', label: 'Thanh toán bill', icon: Banknote, roles: ['thu_ngan'], badge: 'bills' },
-  { to: '/finance', label: 'Thu chi', icon: Banknote, roles: ['manager'] },
+  { to: '/finance', label: 'Doanh thu', icon: Banknote, roles: ['manager'] },
   { to: '/bank-settings', label: 'Tài khoản nhận cọc', icon: Landmark, roles: ['manager'] },
 ];
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [counts, setCounts] = useState({ deposits: 0, bills: 0 });
+  const [counts, setCounts] = useState({ deposits: 0, preorders: 0, bills: 0 });
 
   // Huy hiệu số đếm cho thu_ngan — tự làm mới mỗi 10 giây, hiện ở mọi trang để không bỏ sót việc:
   //  - deposits: số cọc đang chờ xác nhận
@@ -32,12 +33,14 @@ export default function Layout({ children }) {
 
     async function loadCount() {
       // allSettled: 1 API lỗi tạm thời thì giữ nguyên số cũ, không ảnh hưởng số còn lại (và không làm phiền người dùng)
-      const [deposits, bills] = await Promise.allSettled([
+      const [deposits, bills, preorders] = await Promise.allSettled([
         reservationsApi.listPendingDeposits(),
         billsApi.payable(),
+        reservationsApi.listPendingPreorders(),
       ]);
       setCounts((prev) => ({
         deposits: deposits.status === 'fulfilled' ? deposits.value.data.pending.length : prev.deposits,
+        preorders: preorders.status === 'fulfilled' ? (preorders.value.data.preorders || []).length : prev.preorders,
         bills:
           bills.status === 'fulfilled'
             ? bills.value.data.bills.filter((b) => b.unserved_count === 0).length
@@ -58,32 +61,34 @@ export default function Layout({ children }) {
   const visibleItems = navItems.filter((item) => !item.roles || item.roles.includes(user?.role));
 
   return (
-    <div className="flex min-h-screen bg-porcelain">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-5 py-6">
-        <div className="mb-8 flex items-center gap-2 px-1">
+    <div className="flex h-screen overflow-hidden bg-porcelain">
+      <aside className="flex h-screen w-16 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white px-2 py-4 md:w-64 md:px-5 md:py-6">
+        <div className="mb-8 flex shrink-0 items-center justify-center gap-2 px-1 md:justify-start">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-basil-500 text-porcelain">
             <ChefHat size={18} />
           </div>
-          <span className="font-display text-lg font-semibold text-ink">Quán Ăn</span>
+          <span className="hidden font-display text-lg font-semibold text-ink md:inline">Quán Ăn</span>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1">
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {visibleItems.map(({ to, label, icon: Icon, badge }) => (
             <NavLink
               key={to}
               to={to}
+              aria-label={label}
+              title={label}
               className={({ isActive }) =>
-                `flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                `flex items-center justify-center rounded-xl px-2 py-2.5 text-sm font-medium transition-colors md:justify-between md:px-3.5 ${
                   isActive ? 'bg-basil-50 text-basil-700' : 'text-slate-600 hover:bg-slate-50'
                 }`
               }
             >
-              <span className="flex items-center gap-3">
+              <span className="flex items-center gap-0 md:gap-3">
                 <Icon size={18} />
-                {label}
+                <span className="hidden md:inline">{label}</span>
               </span>
               {badge && counts[badge] > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-clay-500 px-1.5 text-xs font-semibold text-white">
+                <span className="hidden h-5 min-w-5 items-center justify-center rounded-full bg-clay-500 px-1.5 text-xs font-semibold text-white md:flex">
                   {counts[badge]}
                 </span>
               )}
@@ -91,20 +96,22 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        <div className="mt-6 border-t border-slate-100 pt-4">
-          <p className="px-1 text-sm font-medium text-ink">{user?.full_name}</p>
-          <p className="px-1 text-xs text-slate-400">{user?.role}</p>
+        <div className="mt-6 shrink-0 border-t border-slate-100 pt-4">
+          <p className="hidden px-1 text-sm font-medium text-ink md:block">{user?.full_name}</p>
+          <p className="hidden px-1 text-xs text-slate-400 md:block">{user?.role}</p>
           <button
             onClick={handleLogout}
-            className="mt-3 flex w-full items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium text-clay-500 hover:bg-clay-50"
+            aria-label="Đăng xuất"
+            title="Đăng xuất"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-sm font-medium text-clay-500 hover:bg-clay-50 md:justify-start md:px-3.5"
           >
             <LogOut size={16} />
-            Đăng xuất
+            <span className="hidden md:inline">Đăng xuất</span>
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto px-8 py-8">{children}</main>
+      <main className="h-screen min-w-0 flex-1 overflow-y-auto px-3 py-4 md:px-8 md:py-8">{children}</main>
     </div>
   );
 }

@@ -90,9 +90,15 @@ function PaymentModal({ billId, onClose, onPaid }) {
   }
 
   async function handlePay(paymentMethod) {
-    const amountDue = data.summary.amount_due;
+    const amountDue = Number(data.summary.amount_due);
+    const refundAmount = Math.max(
+      0,
+      Number(data.summary.deposit_amount) - Number(data.summary.subtotal),
+    );
     let question;
-    if (amountDue === 0) {
+    if (refundAmount > 0) {
+      question = `Bill là ${money(data.summary.subtotal)}, tiền cọc là ${money(data.summary.deposit_amount)}. Xác nhận đã hoàn lại ${money(refundAmount)} tiền mặt cho khách?`;
+    } else if (amountDue === 0) {
       question = 'Xác nhận hoàn tất thanh toán (tiền cọc đã đủ trả bill)?';
     } else if (paymentMethod === 'tien_mat') {
       question = `Xác nhận đã thu đủ ${money(amountDue)} tiền mặt?`;
@@ -105,7 +111,9 @@ function PaymentModal({ billId, onClose, onPaid }) {
     setError('');
     try {
       await billsApi.pay(billId, paymentMethod);
-      onPaid(`Bàn ${data.bill.table_number}: đã thanh toán ${money(amountDue)}. Bàn đã về trạng thái trống.`);
+      onPaid(refundAmount > 0
+        ? `Bàn ${data.bill.table_number}: đã chốt bill và xác nhận hoàn ${money(refundAmount)} tiền mặt cho khách. Bàn đã về trạng thái trống.`
+        : `Bàn ${data.bill.table_number}: đã thanh toán ${money(amountDue)}. Bàn đã về trạng thái trống.`);
     } catch (err) {
       setError(getErrorMessage(err));
       setPaying(false);
@@ -117,6 +125,9 @@ function PaymentModal({ billId, onClose, onPaid }) {
   const summary = data?.summary;
   const isOpen = bill?.status === 'mo';
   const canPay = Boolean(summary) && isOpen && items.length > 0 && summary.unserved_count === 0;
+  const refundAmount = summary
+    ? Math.max(0, Number(summary.deposit_amount) - Number(summary.subtotal))
+    : 0;
 
   return (
     <Modal title={bill ? `Thanh toán — Bàn ${bill.table_number}` : 'Thanh toán'} onClose={onClose} widthClass="max-w-lg">
@@ -169,6 +180,12 @@ function PaymentModal({ billId, onClose, onPaid }) {
                 <span>−{money(summary.deposit_amount)}</span>
               </div>
             )}
+            {refundAmount > 0 && (
+              <div className="flex justify-between font-medium text-basil-700">
+                <span>Hoàn lại khách</span>
+                <span>{money(refundAmount)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-base font-semibold text-ink">
               <span>Còn phải thu</span>
               <span>{money(summary.amount_due)}</span>
@@ -176,12 +193,16 @@ function PaymentModal({ billId, onClose, onPaid }) {
           </div>
 
           {canPay &&
-            (summary.amount_due === 0 ? (
+            (Number(summary.amount_due) === 0 ? (
               <div className="space-y-2">
-                <p className="text-sm text-slate-500">Tiền cọc đã đủ trả bill, không cần thu thêm.</p>
+                <p className="text-sm text-slate-500">
+                  {refundAmount > 0
+                    ? `Tiền cọc dư ${money(refundAmount)}. Vui lòng hoàn lại tiền mặt cho khách trước khi xác nhận.`
+                    : 'Tiền cọc đã đủ trả bill, không cần thu thêm.'}
+                </p>
                 <button type="button" disabled={paying} onClick={() => handlePay('tien_mat')} className="btn-primary w-full">
                   {paying ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                  Xác nhận hoàn tất thanh toán
+                  {refundAmount > 0 ? 'Xác nhận đã hoàn tiền cho khách' : 'Xác nhận hoàn tất thanh toán'}
                 </button>
               </div>
             ) : (

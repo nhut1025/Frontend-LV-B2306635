@@ -1,9 +1,5 @@
 // src/pages/TablesPage.jsx
 //
-// Signature visual: mỗi bàn được vẽ như 1 cái đĩa (2 vòng tròn lồng nhau,
-// viền ngoài là "khăn lót", vòng trong là "đĩa"), màu vòng trong đổi theo
-// trạng thái bàn — ẩn dụ trực quan gắn với chủ đề quán ăn.
-
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound, UtensilsCrossed } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -12,6 +8,7 @@ import Alert from '../components/Alert';
 import BillPanel from '../components/BillPanel';
 import ReadyItemsPanel from '../components/ReadyItemsPanel';
 import WaiterPaymentModal from '../components/WaiterPaymentModal';
+import ReservationPage, { RestaurantFloor } from './ReservationPage';
 import { useAuth } from '../context/AuthContext';
 import { tablesApi } from '../api/tables';
 import { billsApi } from '../api/bills';
@@ -20,10 +17,10 @@ import { createSocket } from '../api/socket';
 import { getErrorMessage } from '../api/client';
 
 const STATUS_CONFIG = {
-  trong: { label: 'Trống', ring: 'bg-basil-50 border-basil-200', dot: 'bg-basil-500' },
-  giu_tam: { label: 'Giữ tạm', ring: 'bg-saffron-50 border-saffron-400', dot: 'bg-saffron-500' },
-  da_dat: { label: 'Đã đặt', ring: 'bg-orange-50 border-orange-400', dot: 'bg-orange-500' },
-  co_khach: { label: 'Có khách', ring: 'bg-clay-50 border-clay-400', dot: 'bg-clay-500' },
+  trong: { label: 'Trống', border: 'border-basil-500', text: 'text-basil-700', dot: 'bg-basil-500' },
+  giu_tam: { label: 'Giữ tạm', border: 'border-yellow-400', text: 'text-yellow-700', dot: 'bg-yellow-500' },
+  da_dat: { label: 'Đã đặt', border: 'border-orange-400', text: 'text-orange-700', dot: 'bg-orange-500' },
+  co_khach: { label: 'Có khách', border: 'border-red-500', text: 'text-red-700', dot: 'bg-red-500' },
 };
 
 const emptyForm = { table_number: '', capacity: '' };
@@ -209,11 +206,19 @@ export default function TablesPage() {
     }
   }
 
+  if (user?.role === 'customer') {
+    return (
+      <Layout>
+        <ReservationPage embedded tables={tables} loading={loading} tablesError={error} />
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink">Sơ đồ bàn</h1>
+          <h1 className="font-display text-2xl font-semibold text-ink">{user?.role === 'customer' ? 'Bàn & đặt bàn' : 'Sơ đồ bàn'}</h1>
           <p className="text-sm text-slate-500">Trạng thái các bàn trong quán</p>
         </div>
         {isManager && (
@@ -224,73 +229,23 @@ export default function TablesPage() {
         )}
       </div>
 
-      {/* Chú thích trạng thái */}
-      <div className="mb-6 flex flex-wrap gap-4">
-        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-          <div key={key} className="flex items-center gap-1.5 text-xs text-slate-500">
-            <span className={`h-2.5 w-2.5 rounded-full ${cfg.dot}`} />
-            {cfg.label}
-          </div>
-        ))}
-      </div>
-
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
       {success && <div className="mb-4"><Alert type="success">{success}</Alert></div>}
       {canOperateTables && <ReadyItemsPanel />}
 
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="animate-spin text-slate-400" size={24} />
-        </div>
-      ) : tables.length === 0 ? (
-        <div className="card text-center text-sm text-slate-500">Chưa có bàn nào.</div>
-      ) : (
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {tables.map((table) => {
-            const cfg = STATUS_CONFIG[table.status] || STATUS_CONFIG.trong;
-            return (
-              <div key={table.id} className="group flex flex-col items-center gap-2">
-                {/* "Khăn lót" — vòng ngoài trung tính */}
-                <div
-                  role="button"
-                  tabIndex="0"
-                  onClick={() => setSelectedTable(table)}
-                  className="relative flex h-32 w-32 items-center justify-center rounded-full bg-slate-100 p-2.5 shadow-sm transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-basil-400"
-                >
-                  {/* "Đĩa" — vòng trong đổi màu theo trạng thái */}
-                  <div className={`flex h-full w-full flex-col items-center justify-center rounded-full border-4 ${cfg.ring}`}>
-                    <span className="font-mono text-lg font-semibold text-ink">{table.table_number}</span>
-                    <span className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-                      <Users size={12} />
-                      {table.capacity}
-                    </span>
-                  </div>
-
-                  {isManager && (
-                    <div className="absolute -bottom-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button
-                        onClick={(event) => { event.stopPropagation(); openEditModal(table); }}
-                        className="rounded-full bg-white p-1.5 text-slate-400 shadow hover:text-basil-600"
-                        aria-label="Sửa bàn"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={(event) => { event.stopPropagation(); handleDelete(table); }}
-                        className="rounded-full bg-white p-1.5 text-slate-400 shadow hover:text-clay-500"
-                        aria-label="Xoá bàn"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <span className="text-xs font-medium text-slate-500">{cfg.label}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="reservation-page reservation-floor-only">
+        <RestaurantFloor
+          tables={tables}
+          matches={[]}
+          selectedTables={selectedTable ? [selectedTable] : []}
+          searched={false}
+          loading={loading}
+          error={!loading && tables.length === 0 ? error : ''}
+          interactive
+          showPanelToggle={false}
+          onSelect={setSelectedTable}
+        />
+      </div>
 
       {canOperateTables && (
         <section className="mt-10">
@@ -366,6 +321,35 @@ export default function TablesPage() {
               <span className="text-slate-500">Sức chứa</span>
               <span className="font-medium text-ink">{selectedTable.capacity} khách</span>
             </div>
+
+            {isManager && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const table = selectedTable;
+                    setSelectedTable(null);
+                    openEditModal(table);
+                  }}
+                  className="btn-secondary w-full"
+                >
+                  <Pencil size={15} />
+                  Sửa bàn
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const table = selectedTable;
+                    setSelectedTable(null);
+                    handleDelete(table);
+                  }}
+                  className="btn-secondary w-full text-clay-600"
+                >
+                  <Trash2 size={15} />
+                  Xoá bàn
+                </button>
+              </div>
+            )}
 
             {selectedTable.status === 'giu_tam' && <Alert type="info">Đang giữ chỗ</Alert>}
             {selectedTable.status === 'da_dat' && (

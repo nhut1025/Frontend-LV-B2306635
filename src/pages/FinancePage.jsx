@@ -193,7 +193,7 @@ export default function FinancePage() {
     <Layout>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink">Thu chi</h1>
+          <h1 className="font-display text-2xl font-semibold text-ink">Doanh thu</h1>
           <p className="text-sm text-slate-500">Theo dõi bill đã thanh toán và người xác nhận</p>
         </div>
         <button type="button" onClick={() => loadBills()} disabled={loading} className="btn-secondary">
