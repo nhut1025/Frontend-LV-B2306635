@@ -20,6 +20,8 @@ import BankSettingsPage from './pages/BankSettingsPage';
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
 import FinancePage from './pages/FinancePage';
+import CategoriesPage from './pages/CategoriesPage';
+import IngredientsPage from './pages/IngredientsPage';
 
 // Trang chủ mặc định theo vai trò: bếp vào thẳng màn hình bếp, các vai trò khác vào sơ đồ bàn.
 function HomeRedirect() {
@@ -49,10 +51,37 @@ export default function App() {
           />
 
           <Route
+            path="/dishes/category/:categoryId"
+            element={
+              <ProtectedRoute>
+                <DishesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/dishes/:id"
             element={
               <ProtectedRoute>
                 <DishDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/categories"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <CategoriesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/ingredients"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <IngredientsPage />
               </ProtectedRoute>
             }
           />

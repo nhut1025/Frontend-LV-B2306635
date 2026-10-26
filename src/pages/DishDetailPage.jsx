@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -11,19 +11,31 @@ export default function DishDetailPage() {
   const [dish, setDish] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const images = useMemo(() => {
+    if (dish?.images?.length) return dish.images;
+    return dish?.image_url ? [dish.image_url] : [];
+  }, [dish]);
 
   useEffect(() => {
+    let active = true;
     async function loadDish() {
+      setLoading(true);
+      setError('');
       try {
         const response = await dishesApi.getById(id);
-        setDish(response.data.dish);
+        if (active) {
+          setDish(response.data.dish);
+          setActiveImageIndex(0);
+        }
       } catch (err) {
-        setError(getErrorMessage(err));
+        if (active) setError(getErrorMessage(err));
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
     loadDish();
+    return () => { active = false; };
   }, [id]);
 
   return (
@@ -43,13 +55,32 @@ export default function DishDetailPage() {
 
       {!loading && !error && dish && (
         <article className="max-w-3xl">
-          {dish.image_url && (
-            <img
-              src={dish.image_url}
-              alt={dish.name}
-              className="h-64 w-full rounded-2xl object-cover sm:h-80"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-            />
+          {images.length > 0 && (
+            <section aria-label={`Hình ảnh ${dish.name}`}>
+              <img
+                src={images[activeImageIndex] || images[0]}
+                alt={`${dish.name} — ảnh ${activeImageIndex + 1}`}
+                className="h-auto max-h-[70vh] w-full rounded-2xl bg-slate-100 object-contain"
+              />
+              {images.length > 1 && (
+                <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+                  {images.map((image, index) => (
+                    <button
+                      key={`${image}-${index}`}
+                      type="button"
+                      onClick={() => setActiveImageIndex(index)}
+                      aria-label={`Xem ảnh ${index + 1} của ${dish.name}`}
+                      aria-pressed={activeImageIndex === index}
+                      className={`shrink-0 overflow-hidden rounded-xl border-2 ${
+                        activeImageIndex === index ? 'border-basil-500' : 'border-transparent'
+                      }`}
+                    >
+                      <img src={image} alt="" className="h-16 w-20 object-cover sm:h-20 sm:w-24" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           )}
           <div className="mt-6">
             <div className="flex flex-wrap items-start justify-between gap-3">

@@ -1,13 +1,15 @@
 // src/components/Layout.jsx
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall } from 'lucide-react';
+import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
 
 const navItems = [
   { to: '/dishes', label: 'Món ăn', icon: UtensilsCrossed, roles: null },
+  { to: '/categories', label: 'Danh mục món', icon: Tags, roles: ['manager'] },
+  { to: '/ingredients', label: 'Nguyên liệu', icon: Leaf, roles: ['manager'] },
   { to: '/tables', label: 'Bàn & đặt bàn', icon: Grid3x3, roles: ['customer'] },
   { to: '/tables', label: 'Sơ đồ bàn', icon: Grid3x3, roles: ['phuc_vu', 'thu_ngan', 'manager'] },
   { to: '/kitchen', label: 'Màn hình bếp', icon: Flame, roles: ['kitchen'] },

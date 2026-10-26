@@ -1,10 +1,11 @@
 // src/pages/MyReservationsPage.jsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Plus, UtensilsCrossed } from 'lucide-react';
+import { Loader2, Plus, Receipt, UtensilsCrossed } from 'lucide-react';
 import Layout from '../components/Layout';
 import Alert from '../components/Alert';
 import { reservationsApi } from '../api/reservations';
+import { billsApi } from '../api/bills';
 import { getErrorMessage } from '../api/client';
 
 const STATUS_CONFIG = {
@@ -14,12 +15,22 @@ const STATUS_CONFIG = {
   da_huy: { label: 'Đã huỷ', badge: 'bg-slate-100 text-slate-500' },
   qua_han: { label: 'Quá hạn (no-show)', badge: 'bg-clay-50 text-clay-600' },
 };
+const PAYMENT_LABELS = { tien_mat: 'Tiền mặt', online: 'Chuyển khoản' };
+const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('vi-VN');
+}
 
 export default function MyReservationsPage() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [preorders, setPreorders] = useState({});
+  const [billsByReservation, setBillsByReservation] = useState({});
+  const [billHistoryError, setBillHistoryError] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -27,6 +38,18 @@ export default function MyReservationsPage() {
         const res = await reservationsApi.listMine();
         const mine = res.data.reservations || [];
         setReservations(mine);
+        try {
+          const billsRes = await billsApi.listMyHistory();
+          const groupedBills = billsRes.data.bills.reduce((grouped, bill) => {
+            const reservationBills = grouped[bill.reservation_id] || [];
+            reservationBills.push(bill);
+            grouped[bill.reservation_id] = reservationBills;
+            return grouped;
+          }, {});
+          setBillsByReservation(groupedBills);
+        } catch (billError) {
+          setBillHistoryError(getErrorMessage(billError));
+        }
         const results = await Promise.all(mine.map(async (reservation) => {
           try {
             const preorderRes = await reservationsApi.getPreorder(reservation.id);
@@ -61,6 +84,7 @@ export default function MyReservationsPage() {
       </div>
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
+      {billHistoryError && <div className="mb-4"><Alert>{billHistoryError}</Alert></div>}
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -99,6 +123,92 @@ export default function MyReservationsPage() {
                       </div>
                     );
                   })()}
+                  {billsByReservation[r.id]?.length > 0 && (
+                    <details className="mt-3 border-t border-slate-100 pt-3">
+                      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-basil-700">
+                        <Receipt size={14} />
+                        Xem bill ({billsByReservation[r.id].length})
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        {billsByReservation[r.id].map((bill) => (
+                          <div key={bill.id} className="rounded-lg border border-slate-200 p-3">
+                            <h3 className="mb-3 font-medium text-ink">Chi tiết bill #{bill.id}</h3>
+                            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:grid-cols-3">
+                              <div>
+                                <dt className="text-slate-500">Bàn</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{bill.table_number}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">Thanh toán lúc</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{formatDateTime(bill.paid_at)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">Phương thức</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{PAYMENT_LABELS[bill.payment_method] || '—'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">Thu ngân thanh toán</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{bill.cashier_name || 'Chưa ghi nhận'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">Thu ngân nhận cọc</dt>
+                                <dd className="mt-0.5 font-medium text-ink">
+                                  {bill.deposit_amount > 0 ? bill.deposit_confirmed_by_name || 'Chưa ghi nhận' : 'Không có cọc'}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">Mã giao dịch</dt>
+                                <dd className="mt-0.5 break-all font-medium text-ink">{bill.payment_code || '—'}</dd>
+                              </div>
+                            </dl>
+                            <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+                              <table className="w-full min-w-[440px] text-xs">
+                                <thead className="bg-slate-50 text-left font-medium text-slate-500">
+                                  <tr>
+                                    <th className="px-3 py-2">Món</th>
+                                    <th className="px-3 py-2 text-right">SL</th>
+                                    <th className="px-3 py-2 text-right">Đơn giá</th>
+                                    <th className="px-3 py-2 text-right">Thành tiền</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {bill.items.map((item) => (
+                                    <tr key={item.id} className="border-t border-slate-100">
+                                      <td className="px-3 py-2 text-ink">
+                                        <span className="font-medium">{item.dish_name || `Món #${item.dish_id}`}</span>
+                                        {item.note && <span className="mt-0.5 block text-slate-500">{item.note}</span>}
+                                      </td>
+                                      <td className="px-3 py-2 text-right text-slate-600">{item.quantity}</td>
+                                      <td className="px-3 py-2 text-right text-slate-600">{money(item.unit_price)}</td>
+                                      <td className="px-3 py-2 text-right font-medium text-ink">{money(item.line_total)}</td>
+                                    </tr>
+                                  ))}
+                                  {bill.items.length === 0 && (
+                                    <tr>
+                                      <td colSpan={4} className="px-3 py-3 text-center text-slate-500">
+                                        Bill này không có chi tiết món.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                            <dl className="ml-auto mt-3 max-w-xs space-y-1.5 border-t border-slate-200 pt-3 text-xs">
+                              <div className="flex justify-between gap-3 text-slate-600">
+                                <dt>Tổng bill</dt><dd>{money(bill.total_amount)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3 text-slate-600">
+                                <dt>Đã trừ cọc</dt><dd>−{money(bill.deposit_amount)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3 font-semibold text-ink">
+                                <dt>Thực thu</dt><dd>{money(bill.amount_paid)}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
                 <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.badge}`}>{cfg.label}</span>
               </div>

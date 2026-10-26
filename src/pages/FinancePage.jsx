@@ -11,6 +11,7 @@ import { getErrorMessage } from '../api/client';
 const EMPTY_FILTERS = { from: '', to: '', table_id: '', cashier_id: '', payment_method: '' };
 const EMPTY_TOTALS = {
   bill_count: 0,
+  paid_bill_count: 0,
   total_amount: 0,
   deposit_amount: 0,
   collected_amount: 0,
@@ -18,6 +19,10 @@ const EMPTY_TOTALS = {
   online_amount: 0,
 };
 const PAYMENT_LABELS = { tien_mat: 'Tiền mặt', online: 'Chuyển khoản' };
+const BILL_STATUS_LABELS = {
+  mo: 'Chưa thanh toán',
+  da_thanh_toan: 'Đã thanh toán',
+};
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
 
 function formatDateTime(value) {
@@ -62,6 +67,14 @@ function FinanceBillDetail({ billId, onClose }) {
       ) : bill ? (
         <div className="space-y-5">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-slate-500">Trạng thái</dt>
+              <dd className="mt-0.5 font-medium text-ink">
+                {bill.status === 'da_thanh_toan' && !bill.payment_method
+                  ? 'Đã đóng (không thu tiền)'
+                  : BILL_STATUS_LABELS[bill.status] || bill.status}
+              </dd>
+            </div>
             <div>
               <dt className="text-slate-500">Bàn</dt>
               <dd className="mt-0.5 font-medium text-ink">{bill.table_number}</dd>
@@ -135,6 +148,7 @@ function FinanceBillDetail({ billId, onClose }) {
 
 export default function FinancePage() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [bills, setBills] = useState([]);
   const [totals, setTotals] = useState(EMPTY_TOTALS);
   const [tables, setTables] = useState([]);
@@ -143,7 +157,7 @@ export default function FinancePage() {
   const [error, setError] = useState('');
   const [selectedBillId, setSelectedBillId] = useState(null);
 
-  async function loadBills(nextFilters = filters) {
+  async function loadBills(nextFilters) {
     setLoading(true);
     setError('');
     const params = Object.fromEntries(Object.entries(nextFilters).filter(([, value]) => value !== ''));
@@ -186,6 +200,7 @@ export default function FinancePage() {
 
   async function handleFilter(event) {
     event.preventDefault();
+    setAppliedFilters(filters);
     await loadBills(filters);
   }
 
@@ -194,9 +209,9 @@ export default function FinancePage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-semibold text-ink">Doanh thu</h1>
-          <p className="text-sm text-slate-500">Theo dõi bill đã thanh toán và người xác nhận</p>
+          <p className="text-sm text-slate-500">Theo dõi tất cả bill và doanh thu đã thanh toán</p>
         </div>
-        <button type="button" onClick={() => loadBills()} disabled={loading} className="btn-secondary">
+        <button type="button" onClick={() => loadBills(appliedFilters)} disabled={loading} className="btn-secondary">
           <RotateCw size={16} className={loading ? 'animate-spin' : ''} />
           Làm mới
         </button>
@@ -212,6 +227,7 @@ export default function FinancePage() {
         <div>
           <label className="field-label" htmlFor="finance-to">Đến ngày</label>
           <input id="finance-to" type="date" value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} className="field-input" />
+          <p className="mt-1 text-xs text-slate-400">Để trống ngày để xem toàn bộ lịch sử.</p>
         </div>
         <div>
           <label className="field-label" htmlFor="finance-table">Bàn</label>
@@ -266,7 +282,8 @@ export default function FinancePage() {
         <table className="w-full min-w-[1000px] text-sm">
           <thead className="bg-slate-50 text-left text-xs font-medium text-slate-500">
             <tr>
-              <th className="px-4 py-3">Bill / giờ thanh toán</th>
+              <th className="px-4 py-3">Bill / thời gian</th>
+              <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3">Bàn</th>
               <th className="px-4 py-3 text-right">Tổng bill</th>
               <th className="px-4 py-3 text-right">Đã trừ cọc</th>
@@ -278,15 +295,20 @@ export default function FinancePage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan="8" className="px-4 py-12 text-center"><Loader2 className="mx-auto animate-spin text-slate-400" size={22} /></td></tr>
+              <tr><td colSpan="9" className="px-4 py-12 text-center"><Loader2 className="mx-auto animate-spin text-slate-400" size={22} /></td></tr>
             ) : bills.length === 0 ? (
-              <tr><td colSpan="8" className="px-4 py-10 text-center text-slate-500">Không có bill phù hợp bộ lọc.</td></tr>
+              <tr><td colSpan="9" className="px-4 py-10 text-center text-slate-500">Không có bill phù hợp bộ lọc.</td></tr>
             ) : (
               bills.map((bill) => (
                 <tr key={bill.bill_id} className="border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-4 py-3">
                     <span className="font-medium text-ink">#{bill.bill_id}</span>
                     <span className="mt-0.5 block text-xs text-slate-500">{formatDateTime(bill.paid_at)}</span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {bill.status === 'da_thanh_toan' && !bill.payment_method
+                      ? 'Đã đóng (không thu tiền)'
+                      : BILL_STATUS_LABELS[bill.status] || bill.status}
                   </td>
                   <td className="px-4 py-3 text-ink">{bill.table_number}</td>
                   <td className="px-4 py-3 text-right text-slate-700">{money(bill.total_amount)}</td>
@@ -312,7 +334,7 @@ export default function FinancePage() {
           {!loading && bills.length > 0 && (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-ink">
               <tr>
-                <td className="px-4 py-3">Tổng cộng ({totals.bill_count || bills.length} bill)</td>
+                <td className="px-4 py-3" colSpan="2">Doanh thu ({totals.paid_bill_count || 0} bill đã thanh toán)</td>
                 <td className="px-4 py-3">—</td>
                 <td className="px-4 py-3 text-right">{money(totals.total_amount)}</td>
                 <td className="px-4 py-3 text-right">{money(totals.deposit_amount)}</td>

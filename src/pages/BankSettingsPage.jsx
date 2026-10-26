@@ -1,4 +1,4 @@
-// src/pages/BankSettingsPage.jsx
+// src/pages/Ban kSettingsPage.jsx
 import { useEffect, useState } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -6,7 +6,6 @@ import Alert from '../components/Alert';
 import { settingsApi } from '../api/settings';
 import { getErrorMessage } from '../api/client';
 
-// Danh sách rút gọn các ngân hàng phổ biến — đủ dùng cho phạm vi đồ án.
 // Mã BIN theo chuẩn VietQR/Napas.
 const BANKS = [
   { bin: '970436', name: 'Vietcombank' },
