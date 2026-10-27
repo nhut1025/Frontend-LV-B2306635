@@ -39,6 +39,12 @@ export default function TablesPage() {
   const [success, setSuccess] = useState('');
   const [selectedTable, setSelectedTable] = useState(null);
   const [actionId, setActionId] = useState(null);
+  const [refundCancelTarget, setRefundCancelTarget] = useState(null);
+  const [refundDetails, setRefundDetails] = useState({
+    refund_bank_code: '',
+    refund_account_number: '',
+    refund_account_name: '',
+  });
   const [billTable, setBillTable] = useState(null);
   const [paymentTable, setPaymentTable] = useState(null);
 
@@ -139,15 +145,19 @@ export default function TablesPage() {
     }
   }
 
-  async function handleReservationAction(reservationId, action) {
-    if (action === 'cancel' && !confirm('Bạn có chắc muốn hủy đặt bàn này? Các bàn liên quan sẽ được giải phóng.')) return;
+  async function handleReservationAction(reservationId, action, refundAccount = {}) {
+    if (action === 'cancel' && !Object.keys(refundAccount).length
+      && !confirm('Hủy đặt bàn này? Nếu hủy trễ hạn, khách sẽ mất cọc.')) return;
+    const cancellationData = action === 'cancel' && !Object.keys(refundAccount).length
+      ? { accept_forfeiture: true }
+      : refundAccount;
     setActionId(`reservation-${reservationId}`);
     setError('');
     setSuccess('');
     try {
       const res = action === 'confirm'
         ? await reservationsApi.confirmArrival(reservationId)
-        : await reservationsApi.cancelByStaff(reservationId);
+        : await reservationsApi.cancelByStaff(reservationId, cancellationData);
       setSuccess(res.data.message);
       if (action === 'confirm') {
         const confirmedId = String(reservationId);
@@ -157,11 +167,31 @@ export default function TablesPage() {
         ));
       }
       await refreshOperationalData();
+      return true;
     } catch (err) {
-      setError(getErrorMessage(err));
+      const message = getErrorMessage(err);
+      if (action === 'cancel' && err.response?.status === 409) {
+        setRefundCancelTarget(null);
+        await refreshOperationalData();
+      }
+      setError(message);
+      return false;
     } finally {
       setActionId(null);
     }
+  }
+
+  function requestReservationCancellation(reservation) {
+    if (Number(reservation.preorder_prepared)) {
+      setError('Không thể hủy vì món đặt trước đã được đưa vào bill và gửi xuống bếp.');
+      return;
+    }
+    if (Number(reservation.cancel_refund_eligible)) {
+      setRefundDetails({ refund_bank_code: '', refund_account_number: '', refund_account_name: '' });
+      setRefundCancelTarget(reservation);
+      return;
+    }
+    handleReservationAction(reservation.id, 'cancel');
   }
 
   function openCreateModal() {
@@ -296,12 +326,15 @@ export default function TablesPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleReservationAction(reservation.id, 'cancel')}
-                      disabled={actionId === `reservation-${reservation.id}`}
+                      onClick={() => requestReservationCancellation(reservation)}
+                      disabled={actionId === `reservation-${reservation.id}` || Number(reservation.preorder_prepared)}
                       className="btn-secondary text-clay-600"
                     >
                       Hủy đặt bàn
                     </button>
+                    {Number(reservation.preorder_prepared) > 0 && (
+                      <span className="self-center text-xs text-slate-500">Món đã vào bill/bếp, không thể hủy</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -386,6 +419,47 @@ export default function TablesPage() {
             </div>
           )}
           </div>
+        </Modal>
+      )}
+
+      {refundCancelTarget && (
+        <Modal title={`Hủy đặt bàn #${refundCancelTarget.id}`} onClose={() => setRefundCancelTarget(null)}>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleReservationAction(refundCancelTarget.id, 'cancel', refundDetails)
+                .then((succeeded) => {
+                  if (succeeded) setRefundCancelTarget(null);
+                });
+            }}
+          >
+            <p className="text-sm text-slate-600">
+              Đơn đủ điều kiện hoàn 100% tiền cọc. Nhập tài khoản khách để quản lý chuyển khoản hoàn tiền.
+            </p>
+            <label className="block">
+              <span className="field-label">Ngân hàng</span>
+              <input required maxLength={20} className="field-input" value={refundDetails.refund_bank_code}
+                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_bank_code: event.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="field-label">Số tài khoản</span>
+              <input required maxLength={50} className="field-input" value={refundDetails.refund_account_number}
+                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_account_number: event.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="field-label">Tên chủ tài khoản</span>
+              <input required maxLength={100} className="field-input" value={refundDetails.refund_account_name}
+                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_account_name: event.target.value }))} />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setRefundCancelTarget(null)}>Đóng</button>
+              <button type="submit" disabled={actionId === `reservation-${refundCancelTarget.id}`} className="btn-primary">
+                {actionId === `reservation-${refundCancelTarget.id}` && <Loader2 size={15} className="animate-spin" />}
+                Hủy và gửi yêu cầu hoàn
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
 

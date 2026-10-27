@@ -6,6 +6,7 @@ export const reservationsApi = {
     client.get('/reservations/suggest-tables', { params: { party_size: partySize } }),
   createHold: (data) => client.post('/reservations', data),
   listMine: () => client.get('/reservations'),
+  cancelMine: (id, data) => client.patch(`/reservations/${id}/cancel`, data),
   getPreorder: (id) => client.get(`/reservations/${id}/preorder`),
   listPendingPreorders: () => client.get('/reservations/preorders/pending'),
   updatePreorderContact: (id, result) =>
@@ -15,7 +16,9 @@ export const reservationsApi = {
   getById: (id) => client.get(`/reservations/${id}`),
   getDepositQr: (id) => client.get(`/reservations/${id}/deposit-qr`),
   listPendingDeposits: () => client.get('/reservations/pending-deposits'),
+  listPendingRefunds: () => client.get('/reservations/pending-refunds'),
+  confirmRefund: (id) => client.patch(`/reservations/${id}/confirm-refund`),
   confirmDeposit: (id) => client.patch(`/reservations/${id}/confirm-deposit`),
   confirmArrival: (id) => client.patch(`/reservations/${id}/confirm-arrival`),
-  cancelByStaff: (id) => client.patch(`/reservations/${id}/cancel-by-staff`),
+  cancelByStaff: (id, data = {}) => client.patch(`/reservations/${id}/cancel-by-staff`, data),
 };

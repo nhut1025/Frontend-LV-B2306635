@@ -1,9 +1,10 @@
 // src/pages/MyReservationsPage.jsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Plus, Receipt, UtensilsCrossed } from 'lucide-react';
+import { Loader2, Plus, Receipt, UtensilsCrossed, X } from 'lucide-react';
 import Layout from '../components/Layout';
 import Alert from '../components/Alert';
+import Modal from '../components/Modal';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
 import { getErrorMessage } from '../api/client';
@@ -31,6 +32,15 @@ export default function MyReservationsPage() {
   const [preorders, setPreorders] = useState({});
   const [billsByReservation, setBillsByReservation] = useState({});
   const [billHistoryError, setBillHistoryError] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [refundDetails, setRefundDetails] = useState({
+    refund_bank_code: '',
+    refund_account_number: '',
+    refund_account_name: '',
+  });
+  const [cancellingId, setCancellingId] = useState(null);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelSuccess, setCancelSuccess] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -70,6 +80,53 @@ export default function MyReservationsPage() {
     load();
   }, []);
 
+  async function cancelReservation(reservation, details = {}) {
+    if (reservation.status === 'da_dat' && !Number(reservation.cancel_refund_eligible)
+      && !confirm('Hủy lúc này sẽ mất toàn bộ tiền cọc. Bạn có chắc muốn tiếp tục?')) return;
+    if (reservation.status === 'giu_tam'
+      && !confirm('Hủy lượt giữ bàn chưa thanh toán? Bàn sẽ được trả lại.')) return;
+
+    setCancellingId(reservation.id);
+    setCancelError('');
+    setCancelSuccess('');
+    try {
+      const requestData = reservation.status === 'da_dat' && !Number(reservation.cancel_refund_eligible)
+        ? { accept_forfeiture: true }
+        : details;
+      const response = await reservationsApi.cancelMine(reservation.id, requestData);
+      setReservations((current) => current.map((item) => item.id === reservation.id
+        ? { ...item, status: 'da_huy', deposit_status: response.data.deposit_status, cancel_refund_eligible: 0 }
+        : item));
+      setCancelSuccess(response.data.message);
+      setCancelTarget(null);
+    } catch (err) {
+      setCancelError(getErrorMessage(err));
+      if (err.response?.status === 409) {
+        try {
+          const latest = await reservationsApi.listMine();
+          const latestReservations = latest.data.reservations || [];
+          setReservations(latestReservations);
+          const latestTarget = latestReservations.find((item) => item.id === reservation.id);
+          if (latestTarget && !Number(latestTarget.cancel_refund_eligible)) setCancelTarget(null);
+        } catch (refreshError) {
+          setCancelError(`${getErrorMessage(err)} Không thể làm mới trạng thái đơn: ${getErrorMessage(refreshError)}`);
+        }
+      }
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  function openCancellation(reservation) {
+    setCancelError('');
+    if (Number(reservation.cancel_refund_eligible)) {
+      setRefundDetails({ refund_bank_code: '', refund_account_number: '', refund_account_name: '' });
+      setCancelTarget(reservation);
+      return;
+    }
+    cancelReservation(reservation);
+  }
+
   return (
     <Layout>
       <div className="mb-6 flex items-center justify-between">
@@ -85,6 +142,8 @@ export default function MyReservationsPage() {
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
       {billHistoryError && <div className="mb-4"><Alert>{billHistoryError}</Alert></div>}
+      {cancelSuccess && <div className="mb-4"><Alert type="success">{cancelSuccess}</Alert></div>}
+      {cancelError && <div className="mb-4"><Alert type="error">{cancelError}</Alert></div>}
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -210,11 +269,81 @@ export default function MyReservationsPage() {
                     </details>
                   )}
                 </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.badge}`}>{cfg.label}</span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.badge}`}>{cfg.label}</span>
+                  {r.deposit_status === 'dang_hoan' && <span className="text-xs text-amber-700">Đang chờ quản lý hoàn cọc</span>}
+                  {r.deposit_status === 'da_hoan' && <span className="text-xs text-emerald-700">Đã hoàn cọc</span>}
+                  {r.deposit_status === 'mat_coc' && <span className="text-xs text-clay-600">Cọc đã mất</span>}
+                  {['giu_tam', 'da_dat'].includes(r.status) && !Number(r.preorder_prepared) && (
+                    <button
+                      type="button"
+                      onClick={() => openCancellation(r)}
+                      disabled={cancellingId === r.id}
+                      className="btn-secondary text-clay-600"
+                    >
+                      {cancellingId === r.id ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
+                      Hủy đặt bàn
+                    </button>
+                  )}
+                  {['giu_tam', 'da_dat'].includes(r.status) && Number(r.preorder_prepared) > 0 && (
+                    <span className="max-w-48 text-right text-xs text-slate-500">
+                      Không thể hủy vì món đã được đưa vào bill/bếp
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {cancelTarget && (
+        <Modal title={`Yêu cầu hoàn cọc #${cancelTarget.id}`} onClose={() => setCancelTarget(null)}>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              cancelReservation(cancelTarget, refundDetails);
+            }}
+          >
+            <p className="text-sm text-slate-600">
+              Đơn đủ điều kiện hoàn 100% cọc ({money(cancelTarget.deposit_amount)}). Nhập thông tin tài khoản nhận tiền.
+            </p>
+            <label className="block">
+              <span className="field-label">Ngân hàng</span>
+              <input
+                required maxLength={20} className="field-input"
+                value={refundDetails.refund_bank_code}
+                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_bank_code: event.target.value }))}
+                placeholder="Ví dụ: Vietcombank"
+              />
+            </label>
+            <label className="block">
+              <span className="field-label">Số tài khoản</span>
+              <input
+                required maxLength={50} className="field-input"
+                value={refundDetails.refund_account_number}
+                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_account_number: event.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="field-label">Tên chủ tài khoản</span>
+              <input
+                required maxLength={100} className="field-input"
+                value={refundDetails.refund_account_name}
+                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_account_name: event.target.value }))}
+              />
+            </label>
+            {cancelError && <Alert type="error">{cancelError}</Alert>}
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setCancelTarget(null)}>Đóng</button>
+              <button type="submit" disabled={cancellingId === cancelTarget.id} className="btn-primary">
+                {cancellingId === cancelTarget.id && <Loader2 size={15} className="animate-spin" />}
+                Hủy và gửi yêu cầu hoàn
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </Layout>
   );

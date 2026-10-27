@@ -268,7 +268,7 @@
 .reservation-map-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .reservation-map-legend i { width: 8px; height: 8px; border: 1px solid #b5ceb9; border-radius: 50%; background: #e4efe5; }
 .reservation-map-legend .legend-booked { border-color: #d9b1a7; background: #f2dfd9; }
-.reservation-map-legend .legend-occupied { border-color: #aeb1aa; background: #e4e5e1; }
+.reservation-map-legend .legend-occupied { border-color: #aeb1aa; background: #ff5959; }
 .reservation-map-legend .legend-selected { border-color: #c49a52; background: #f4e2b8; }
 .reservation-map-legend .map-tip { margin-left: auto; color: #929a92; }
 

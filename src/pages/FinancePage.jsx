@@ -18,6 +18,7 @@ const EMPTY_TOTALS = {
   cash_amount: 0,
   online_amount: 0,
 };
+const EMPTY_DEPOSIT_TOTALS = { refunded_amount: 0, forfeited_amount: 0 };
 const PAYMENT_LABELS = { tien_mat: 'Tiền mặt', online: 'Chuyển khoản' };
 const BILL_STATUS_LABELS = {
   mo: 'Chưa thanh toán',
@@ -151,6 +152,10 @@ export default function FinancePage() {
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [bills, setBills] = useState([]);
   const [totals, setTotals] = useState(EMPTY_TOTALS);
+  const [depositTransactions, setDepositTransactions] = useState([]);
+  const [depositTotals, setDepositTotals] = useState(EMPTY_DEPOSIT_TOTALS);
+  const [depositLoading, setDepositLoading] = useState(true);
+  const [depositError, setDepositError] = useState('');
   const [tables, setTables] = useState([]);
   const [cashiers, setCashiers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -174,6 +179,25 @@ export default function FinancePage() {
     }
   }
 
+  async function loadDepositTransactions(nextFilters) {
+    setDepositLoading(true);
+    setDepositError('');
+    const params = Object.fromEntries(
+      Object.entries({ from: nextFilters.from, to: nextFilters.to }).filter(([, value]) => value !== '')
+    );
+    try {
+      const response = await financeApi.listDepositTransactions(params);
+      setDepositTransactions(response.data.transactions || []);
+      setDepositTotals(response.data.totals || EMPTY_DEPOSIT_TOTALS);
+    } catch (err) {
+      setDepositTransactions([]);
+      setDepositTotals(EMPTY_DEPOSIT_TOTALS);
+      setDepositError(getErrorMessage(err));
+    } finally {
+      setDepositLoading(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([tablesApi.list(), staffApi.list()])
@@ -192,6 +216,7 @@ export default function FinancePage() {
 
   useEffect(() => {
     loadBills(EMPTY_FILTERS);
+    loadDepositTransactions(EMPTY_FILTERS);
   }, []);
 
   function updateFilter(field, value) {
@@ -201,23 +226,29 @@ export default function FinancePage() {
   async function handleFilter(event) {
     event.preventDefault();
     setAppliedFilters(filters);
-    await loadBills(filters);
+    await Promise.all([loadBills(filters), loadDepositTransactions(filters)]);
   }
 
   return (
     <Layout>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink">Doanh thu</h1>
-          <p className="text-sm text-slate-500">Theo dõi tất cả bill và doanh thu đã thanh toán</p>
+          <h1 className="font-display text-2xl font-semibold text-ink">Thu chi</h1>
+          <p className="text-sm text-slate-500">Theo dõi bill, hoàn cọc và các khoản cọc mất</p>
         </div>
-        <button type="button" onClick={() => loadBills(appliedFilters)} disabled={loading} className="btn-secondary">
-          <RotateCw size={16} className={loading ? 'animate-spin' : ''} />
+        <button
+          type="button"
+          onClick={() => Promise.all([loadBills(appliedFilters), loadDepositTransactions(appliedFilters)])}
+          disabled={loading || depositLoading}
+          className="btn-secondary"
+        >
+          <RotateCw size={16} className={loading || depositLoading ? 'animate-spin' : ''} />
           Làm mới
         </button>
       </div>
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
+      {depositError && <div className="mb-4"><Alert type="error">{depositError}</Alert></div>}
 
       <form onSubmit={handleFilter} className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-6">
         <div>
@@ -259,7 +290,7 @@ export default function FinancePage() {
         </div>
       </form>
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div className="card p-4">
           <div className="flex items-center gap-2 text-sm text-slate-500"><Receipt size={16} /> Số bill</div>
           <p className="mt-2 text-xl font-semibold text-ink">{Number(totals.bill_count || 0).toLocaleString('vi-VN')}</p>
@@ -276,7 +307,54 @@ export default function FinancePage() {
           <div className="flex items-center gap-2 text-sm text-slate-500"><CreditCard size={16} /> Chuyển khoản</div>
           <p className="mt-2 text-xl font-semibold text-ink">{money(totals.online_amount)}</p>
         </div>
+        <div className="card p-4">
+          <div className="flex items-center gap-2 text-sm text-slate-500"><CreditCard size={16} /> Chi hoàn cọc</div>
+          <p className="mt-2 text-xl font-semibold text-clay-600">{money(depositTotals.refunded_amount)}</p>
+        </div>
+        <div className="card p-4">
+          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Cọc mất (quán giữ)</div>
+          <p className="mt-2 text-xl font-semibold text-basil-700">{money(depositTotals.forfeited_amount)}</p>
+        </div>
       </div>
+
+      <section className="mb-6">
+        <div className="mb-3">
+          <h2 className="font-display text-lg font-semibold text-ink">Thu / chi từ tiền cọc</h2>
+          <p className="text-sm text-slate-500">Chỉ tính cọc đã hoàn thực tế hoặc cọc đã chuyển sang trạng thái mất.</p>
+        </div>
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <table className="w-full min-w-[700px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-medium text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Ngày</th>
+                <th className="px-4 py-3">Đặt bàn</th>
+                <th className="px-4 py-3">Loại giao dịch</th>
+                <th className="px-4 py-3">Người xử lý</th>
+                <th className="px-4 py-3 text-right">Số tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              {depositLoading ? (
+                <tr><td colSpan="5" className="px-4 py-8 text-center"><Loader2 className="mx-auto animate-spin text-slate-400" size={20} /></td></tr>
+              ) : depositTransactions.length === 0 ? (
+                <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-500">Không có giao dịch cọc trong khoảng thời gian này.</td></tr>
+              ) : depositTransactions.map((transaction, index) => (
+                <tr key={`${transaction.reservation_id}-${transaction.transaction_type}-${index}`} className="border-t border-slate-100">
+                  <td className="px-4 py-3 text-slate-600">{formatDateTime(transaction.transaction_at)}</td>
+                  <td className="px-4 py-3 text-ink">#{transaction.reservation_id}</td>
+                  <td className={`px-4 py-3 font-medium ${transaction.transaction_type === 'refund' ? 'text-clay-600' : 'text-basil-700'}`}>
+                    {transaction.transaction_type === 'refund' ? 'Chi · Hoàn cọc' : 'Thu · Cọc mất'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{transaction.handled_by_name || 'Tự động ghi nhận'}</td>
+                  <td className={`px-4 py-3 text-right font-semibold ${transaction.transaction_type === 'refund' ? 'text-clay-600' : 'text-basil-700'}`}>
+                    {transaction.transaction_type === 'refund' ? '−' : '+'}{money(transaction.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
         <table className="w-full min-w-[1000px] text-sm">

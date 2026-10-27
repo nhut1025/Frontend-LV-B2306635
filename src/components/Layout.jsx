@@ -1,10 +1,11 @@
 // src/components/Layout.jsx
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf } from 'lucide-react';
+import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
+import { createSocket } from '../api/socket';
 
 const navItems = [
   { to: '/dishes', label: 'Món ăn', icon: UtensilsCrossed, roles: null },
@@ -16,16 +17,18 @@ const navItems = [
   { to: '/profile', label: 'Hồ sơ cá nhân', icon: UserRound, roles: null },
   { to: '/staff', label: 'Nhân sự', icon: Users2, roles: ['manager'] },
   { to: '/pending-deposits', label: 'Cọc chờ xác nhận', icon: Receipt, roles: ['thu_ngan'], badge: 'deposits' },
+  { to: '/pending-refunds', label: 'Hoàn cọc', icon: Receipt, roles: ['manager'], badge: 'refunds' },
   { to: '/pending-preorders', label: 'Món đặt trước', icon: PhoneCall, roles: ['thu_ngan'], badge: 'preorders' },
   { to: '/payments', label: 'Thanh toán bill', icon: Banknote, roles: ['thu_ngan'], badge: 'bills' },
-  { to: '/finance', label: 'Doanh thu', icon: Banknote, roles: ['manager'] },
+  { to: '/finance', label: 'Thu chi', icon: Banknote, roles: ['manager'] },
   { to: '/bank-settings', label: 'Tài khoản nhận cọc', icon: Landmark, roles: ['manager'] },
 ];
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [counts, setCounts] = useState({ deposits: 0, preorders: 0, bills: 0 });
+  const [counts, setCounts] = useState({ deposits: 0, preorders: 0, bills: 0, refunds: 0 });
+  const [refundNotice, setRefundNotice] = useState('');
 
   // Huy hiệu số đếm cho thu_ngan — tự làm mới mỗi 10 giây, hiện ở mọi trang để không bỏ sót việc:
   //  - deposits: số cọc đang chờ xác nhận
@@ -53,6 +56,31 @@ export default function Layout({ children }) {
     loadCount();
     const intervalId = setInterval(loadCount, 10000);
     return () => clearInterval(intervalId);
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'manager') return undefined;
+
+    async function loadRefundCount() {
+      try {
+        const response = await reservationsApi.listPendingRefunds();
+        setCounts((current) => ({ ...current, refunds: response.data.pending.length }));
+      } catch (err) {
+        console.error('Không thể cập nhật số yêu cầu hoàn cọc:', err.message);
+      }
+    }
+
+    loadRefundCount();
+    const intervalId = setInterval(loadRefundCount, 15000);
+    const socket = createSocket();
+    socket.on('refund:requested', (request) => {
+      loadRefundCount();
+      setRefundNotice(`Có yêu cầu hoàn cọc mới cho đặt bàn #${request.reservation_id}.`);
+    });
+    return () => {
+      clearInterval(intervalId);
+      socket.disconnect();
+    };
   }, [user?.role]);
 
   function handleLogout() {
@@ -114,6 +142,17 @@ export default function Layout({ children }) {
       </aside>
 
       <main className="h-screen min-w-0 flex-1 overflow-y-auto px-3 py-4 md:px-8 md:py-8">{children}</main>
+      {refundNotice && (
+        <div className="fixed right-4 top-4 z-50 flex max-w-md items-center gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-ink shadow-lg">
+          <span>{refundNotice}</span>
+          <NavLink to="/pending-refunds" onClick={() => setRefundNotice('')} className="shrink-0 font-medium text-basil-700">
+            Xem
+          </NavLink>
+          <button type="button" onClick={() => setRefundNotice('')} aria-label="Đóng thông báo" className="shrink-0 text-slate-400 hover:text-ink">
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -844,10 +844,16 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                             </button>
                           )}
                           {selectedDishCount > 0 && (
-                            <div className="preorder-total">
-                              <span><ShoppingBag size={14} /> {selectedDishCount} món đã chọn</span>
-                              <strong>{selectedDishTotal.toLocaleString('vi-VN')}đ</strong>
-                            </div>
+                            <>
+                              <div className="preorder-total">
+                                <span><ShoppingBag size={14} /> {selectedDishCount} món đã chọn</span>
+                                <strong>{selectedDishTotal.toLocaleString('vi-VN')}đ</strong>
+                              </div>
+                              <div className="preorder-total">
+                                <span>Tiền cọc (50%)</span>
+                                <strong>{Math.round(selectedDishTotal / 2).toLocaleString('vi-VN')}đ</strong>
+                              </div>
+                            </>
                           )}
                         </>
                       )}
@@ -865,7 +871,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                   {holding ? 'Đang giữ bàn...' : 'Tiếp tục đặt bàn'}
                   <ArrowRight size={15} />
                 </button>
-                <p className="reservation-trust"><ShieldCheck size={14} /> Món đặt trước chỉ gửi bếp sau khi bạn xác nhận với thu ngân.</p>
+                <p className="reservation-trust"><ShieldCheck size={14} /> Chỉ đặt bàn: cọc 50.000đ. Có đặt món trước: cọc 50% tổng tiền món. Món chỉ gửi bếp sau khi thu ngân xác nhận.</p>
               </>
             ) : (
               <div className="reservation-hold-content">

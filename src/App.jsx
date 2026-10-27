@@ -15,6 +15,7 @@ import ProfilePage from './pages/ProfilePage';
 import MyReservationsPage from './pages/MyReservationsPage';
 import StaffManagementPage from './pages/StaffManagementPage';
 import PendingDepositsPage from './pages/PendingDepositsPage';
+import PendingRefundsPage from './pages/PendingRefundsPage';
 import PendingPreordersPage from './pages/PendingPreordersPage';
 import BankSettingsPage from './pages/BankSettingsPage';
 import KitchenPage from './pages/KitchenPage';
@@ -132,6 +133,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['thu_ngan']}>
                 <PendingDepositsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/pending-refunds"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <PendingRefundsPage />
               </ProtectedRoute>
             }
           />
