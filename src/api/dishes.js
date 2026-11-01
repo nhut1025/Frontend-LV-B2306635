@@ -4,6 +4,7 @@ import client from './client';
 export const dishesApi = {
   list: (params) => client.get('/dishes', { params }),
   getById: (id) => client.get(`/dishes/${id}`),
+  getReviews: (id) => client.get(`/dishes/${id}/reviews`),
   uploadImage: (file) => {
     const data = new FormData();
     data.append('image', file);

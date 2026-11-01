@@ -1,7 +1,7 @@
 // src/components/Layout.jsx
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf, X } from 'lucide-react';
+import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf, Star, MessageSquareText, X, Clock3, CalendarClock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
@@ -9,9 +9,12 @@ import { createSocket } from '../api/socket';
 
 const navItems = [
   { to: '/dishes', label: 'Món ăn', icon: UtensilsCrossed, roles: null },
+  { to: '/restaurant-reviews', label: 'Đánh giá quán', icon: Star, roles: null },
+  { to: '/manage-reviews', label: 'Quản lý đánh giá', icon: MessageSquareText, roles: ['manager'] },
   { to: '/categories', label: 'Danh mục món', icon: Tags, roles: ['manager'] },
   { to: '/ingredients', label: 'Nguyên liệu', icon: Leaf, roles: ['manager'] },
   { to: '/tables', label: 'Bàn & đặt bàn', icon: Grid3x3, roles: ['customer'] },
+  { to: '/my-reservations', label: 'Lịch sử đặt bàn', icon: CalendarClock, roles: ['customer'] },
   { to: '/tables', label: 'Sơ đồ bàn', icon: Grid3x3, roles: ['phuc_vu', 'thu_ngan', 'manager'] },
   { to: '/kitchen', label: 'Màn hình bếp', icon: Flame, roles: ['kitchen'] },
   { to: '/profile', label: 'Hồ sơ cá nhân', icon: UserRound, roles: null },
@@ -22,6 +25,7 @@ const navItems = [
   { to: '/payments', label: 'Thanh toán bill', icon: Banknote, roles: ['thu_ngan'], badge: 'bills' },
   { to: '/finance', label: 'Thu chi', icon: Banknote, roles: ['manager'] },
   { to: '/bank-settings', label: 'Tài khoản nhận cọc', icon: Landmark, roles: ['manager'] },
+  { to: '/table-transfer-settings', label: 'Thời lượng sử dụng bàn', icon: Clock3, roles: ['manager'] },
 ];
 
 export default function Layout({ children }) {
@@ -88,7 +92,12 @@ export default function Layout({ children }) {
     navigate('/login');
   }
 
-  const visibleItems = navItems.filter((item) => !item.roles || item.roles.includes(user?.role));
+  const visibleItems = user
+    ? navItems.filter((item) => !item.roles || item.roles.includes(user.role))
+    : navItems.filter((item) => (
+      ['/dishes', '/restaurant-reviews'].includes(item.to)
+      || (item.to === '/tables' && item.roles?.includes('customer'))
+    ));
 
   return (
     <div className="flex h-screen overflow-hidden bg-porcelain">
@@ -115,7 +124,7 @@ export default function Layout({ children }) {
             >
               <span className="flex items-center gap-0 md:gap-3">
                 <Icon size={18} />
-                <span className="hidden md:inline">{label}</span>
+                <span className="hidden md:inline">{!user && to === '/tables' ? 'Sơ đồ bàn' : label}</span>
               </span>
               {badge && counts[badge] > 0 && (
                 <span className="hidden h-5 min-w-5 items-center justify-center rounded-full bg-clay-500 px-1.5 text-xs font-semibold text-white md:flex">
@@ -127,17 +136,31 @@ export default function Layout({ children }) {
         </nav>
 
         <div className="mt-6 shrink-0 border-t border-slate-100 pt-4">
-          <p className="hidden px-1 text-sm font-medium text-ink md:block">{user?.full_name}</p>
-          <p className="hidden px-1 text-xs text-slate-400 md:block">{user?.role}</p>
-          <button
-            onClick={handleLogout}
-            aria-label="Đăng xuất"
-            title="Đăng xuất"
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-sm font-medium text-clay-500 hover:bg-clay-50 md:justify-start md:px-3.5"
-          >
-            <LogOut size={16} />
-            <span className="hidden md:inline">Đăng xuất</span>
-          </button>
+          {user ? (
+            <>
+              <p className="hidden px-1 text-sm font-medium text-ink md:block">{user.full_name}</p>
+              <p className="hidden px-1 text-xs text-slate-400 md:block">{user.role}</p>
+              <button
+                onClick={handleLogout}
+                aria-label="Đăng xuất"
+                title="Đăng xuất"
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-sm font-medium text-clay-500 hover:bg-clay-50 md:justify-start md:px-3.5"
+              >
+                <LogOut size={16} />
+                <span className="hidden md:inline">Đăng xuất</span>
+              </button>
+            </>
+          ) : (
+            <NavLink
+              to="/login"
+              aria-label="Đăng nhập"
+              title="Đăng nhập"
+              className="flex items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-sm font-medium text-basil-700 hover:bg-basil-50 md:justify-start md:px-3.5"
+            >
+              <UserRound size={16} />
+              <span className="hidden md:inline">Đăng nhập</span>
+            </NavLink>
+          )}
         </div>
       </aside>
 

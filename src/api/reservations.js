@@ -20,5 +20,7 @@ export const reservationsApi = {
   confirmRefund: (id) => client.patch(`/reservations/${id}/confirm-refund`),
   confirmDeposit: (id) => client.patch(`/reservations/${id}/confirm-deposit`),
   confirmArrival: (id) => client.patch(`/reservations/${id}/confirm-arrival`),
+  transferTables: (id, table_ids) => client.patch(`/reservations/${id}/tables`, { table_ids }),
   cancelByStaff: (id, data = {}) => client.patch(`/reservations/${id}/cancel-by-staff`, data),
+  restoreAfterStaffCancel: (id) => client.patch(`/reservations/${id}/restore-after-cancel`),
 };

@@ -37,6 +37,34 @@ function getLocalDateString(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+function getMinimumReservationDate(now) {
+  const closingTime = new Date(now);
+  closingTime.setHours(21, 0, 0, 0);
+  if (now < closingTime) return getLocalDateString(now);
+
+  const nextOpenDate = new Date(now);
+  nextOpenDate.setDate(nextOpenDate.getDate() + 1);
+  return getLocalDateString(nextOpenDate);
+}
+
+function getEarliestReservationTime(now) {
+  const earliest = new Date(now);
+  earliest.setSeconds(0, 0);
+  earliest.setMinutes(earliest.getMinutes() + 1);
+  return `${String(earliest.getHours()).padStart(2, '0')}:${String(earliest.getMinutes()).padStart(2, '0')}`;
+}
+
+function isReservationDateTimeFuture(date, time, now) {
+  if (!date || !time || !isWithinReservationHours(time)) return false;
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  const requestedAt = new Date(year, month - 1, day, hour, minute);
+  return requestedAt.getFullYear() === year
+    && requestedAt.getMonth() === month - 1
+    && requestedAt.getDate() === day
+    && requestedAt > now;
+}
+
 function countdownText(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -168,11 +196,11 @@ function Chair({ angle, radius }) {
   return <span className="floor-chair" style={{ left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) rotate(${angle + 90}deg)` }} />;
 }
 
-function FloorTable({ table, position, highlighted, selected, dimmed, disabled, onSelect }) {
+function FloorTable({ table, position, highlighted, selected, dimmed, disabled, onSelect, preview }) {
   const capacity = Math.max(1, Number(table.capacity) || 1);
   const seatCount = Math.min(8, Math.max(2, capacity));
   const shape = 'square';
-  const status = STATUS_CLASS[table.status] || 'available';
+  const status = preview ? 'available' : STATUS_CLASS[table.status] || 'available';
   const label = STATUS_LABEL[table.status] || table.status || STATUS_LABEL.trong;
 
   return (
@@ -182,9 +210,9 @@ function FloorTable({ table, position, highlighted, selected, dimmed, disabled, 
       className={`floor-table ${status}${highlighted ? ' is-highlighted' : ''}${selected ? ' is-selected' : ''}${dimmed ? ' is-dimmed' : ''}`}
       style={{ left: `${position.x}%`, top: `${position.y}%` }}
       onClick={() => onSelect(table)}
-      aria-label={`Bàn ${tableName(table)}, ${capacity} chỗ, ${label}`}
+      aria-label={preview ? `Bàn ${tableName(table)}, ${capacity} chỗ` : `Bàn ${tableName(table)}, ${capacity} chỗ, ${label}`}
       aria-pressed={selected}
-      title={`Bàn ${tableName(table)} · ${capacity} khách · ${label}`}
+      title={preview ? `Bàn ${tableName(table)} · ${capacity} khách` : `Bàn ${tableName(table)} · ${capacity} khách · ${label}`}
     >
       {Array.from({ length: seatCount }, (_, index) => (
         <Chair key={index} angle={(360 / seatCount) * index - 90} radius={shape === 'long' ? 48 : 45} />
@@ -193,14 +221,14 @@ function FloorTable({ table, position, highlighted, selected, dimmed, disabled, 
         <strong>{tableName(table)}</strong>
         <small><Users size={10} /> {capacity} chỗ</small>
       </span>
-      <span className="floor-table-status">{label}</span>
+      <span className="floor-table-status">{preview ? 'Bàn' : label}</span>
     </button>
   );
 }
 
 export function RestaurantFloor({
   tables, matches, selectedTables, searched, loading, error, panelVisible, onTogglePanel, onSelect,
-  showPanelToggle = true, interactive = false,
+  showPanelToggle = true, interactive = false, preview = false,
 }) {
   const positions = useMemo(() => getTablePositions(tables), [tables]);
   const highlightedIds = new Set(matches.flatMap((option) => option.tables.map((table) => String(table.id))));
@@ -213,11 +241,11 @@ export function RestaurantFloor({
           <span className="reservation-map-icon"><Eye size={18} /></span>
           <div>
             <h2>Sơ đồ nhà hàng</h2>
-            <p>Góc nhìn từ trên xuống · Tầng trệt</p>
+            <p>{preview ? 'Sơ đồ bố trí · Tầng trệt' : 'Góc nhìn từ trên xuống · Tầng trệt'}</p>
           </div>
         </div>
         <div className="reservation-map-heading-actions">
-          <span className="reservation-map-live"><i /> Cập nhật trực tiếp</span>
+          {!preview && <span className="reservation-map-live"><i /> Cập nhật trực tiếp</span>}
           {showPanelToggle && (
             <button type="button" className="reservation-panel-toggle" onClick={onTogglePanel}>
               {panelVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
@@ -303,8 +331,9 @@ export function RestaurantFloor({
               highlighted={highlighted}
               selected={selectedIds.has(String(table.id))}
               dimmed={searched && statusAvailable && !highlighted}
-              disabled={!interactive && !statusAvailable}
+              disabled={preview || (!interactive && !statusAvailable)}
               onSelect={onSelect}
+              preview={preview}
             />
           );
         })}
@@ -312,11 +341,18 @@ export function RestaurantFloor({
       </div>
 
       <div className="reservation-map-legend">
-        <span><i className="legend-free" /> Trống</span>
-        <span><i className="legend-booked" /> Đã đặt</span>
-        <span><i className="legend-occupied" /> Đang có khách</span>
-        <span><i className="legend-selected" /> Đang chọn</span>
-        <span className="map-tip">Nhấn vào bàn trống để chọn vị trí</span>
+        {preview ? (
+          <span className="map-tip">Sơ đồ giới thiệu các vị trí bàn, không hiển thị tình trạng đặt chỗ.</span>
+        ) : (
+          <>
+            <span><i className="legend-free" /> Trống</span>
+            <span><i className="legend-booked" /> Đã đặt</span>
+            <span><i className="legend-held" /> Giữ chỗ</span>
+            <span><i className="legend-occupied" /> Đang có khách</span>
+            <span><i className="legend-selected" /> Đang chọn</span>
+            <span className="map-tip">Mỗi màu biểu thị một trạng thái bàn riêng biệt.</span>
+          </>
+        )}
       </div>
     </section>
   );
@@ -344,12 +380,45 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   const [dishesLoading, setDishesLoading] = useState(true);
   const [dishesError, setDishesError] = useState('');
   const [error, setError] = useState('');
+  const [now, setNow] = useState(() => new Date());
   const [profilePhone, setProfilePhone] = useState(user?.phone || '');
   const [profilePhoneError, setProfilePhoneError] = useState('');
   const [panelVisible, setPanelVisible] = useState(true);
   const [showDishMenu, setShowDishMenu] = useState(false);
   const [showAllDishes, setShowAllDishes] = useState(false);
   const expiryRef = useRef(null);
+  const today = getLocalDateString(now);
+  const minimumReservationDate = getMinimumReservationDate(now);
+  const earliestReservationTime = getEarliestReservationTime(now);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    if (form.reservation_date && form.reservation_date < minimumReservationDate) {
+      setForm((current) => ({
+        ...current,
+        reservation_date: minimumReservationDate,
+        reservation_time: '07:00',
+      }));
+      setSuggestions([]);
+      setSelectedSuggestion(null);
+      setError('Ngày đặt bàn đã qua giờ phục vụ. Vui lòng chọn ngày và giờ trong tương lai.');
+      return;
+    }
+
+    if (
+      form.reservation_date === today
+      && isWithinReservationHours(earliestReservationTime)
+      && form.reservation_time < earliestReservationTime
+    ) {
+      setForm((current) => ({ ...current, reservation_time: earliestReservationTime }));
+      setSuggestions([]);
+      setSelectedSuggestion(null);
+    }
+  }, [form.reservation_date, form.reservation_time, minimumReservationDate, today, earliestReservationTime]);
 
   useEffect(() => {
     let active = true;
@@ -425,6 +494,20 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   const visibleDishes = showAllDishes ? dishes : dishes.slice(0, 4);
   const searched = suggestions.length > 0 || Boolean(form.party_size && error && !hold);
   const [reservationHour, reservationMinute] = form.reservation_time.split(':');
+  const sameDayReservation = form.reservation_date === today;
+  const availableHours = RESERVATION_HOURS.filter((hour) => {
+    const lastSelectableTime = hour === '21' ? '21:00' : `${hour}:59`;
+    return !sameDayReservation || lastSelectableTime >= earliestReservationTime;
+  });
+  const availableMinutes = (reservationHour === '21' ? ['00'] : RESERVATION_MINUTES).filter((minute) => (
+    !sameDayReservation || `${reservationHour}:${minute}` >= earliestReservationTime
+  ));
+  const reservationDateUnavailable = Boolean(
+    form.reservation_date && form.reservation_date < minimumReservationDate
+  );
+  const reservationTimeUnavailable = sameDayReservation
+    && !isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now);
+  const bookingDateTimeUnavailable = reservationDateUnavailable || reservationTimeUnavailable;
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -493,6 +576,10 @@ export default function ReservationPage({ embedded = false, tables = [], loading
     }
     if (!form.reservation_date || !form.reservation_time) {
       setError('Vui lòng chọn ngày và giờ đặt bàn.');
+      return;
+    }
+    if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now)) {
+      setError('Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ 07:00–21:00.');
       return;
     }
     if (!isWithinReservationHours(form.reservation_time)) {
@@ -565,6 +652,10 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   }
 
   async function handleCreateReservation() {
+    if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, new Date())) {
+      setError('Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ 07:00–21:00.');
+      return;
+    }
     if (!isWithinReservationHours(form.reservation_time)) {
       setError('Nhà hàng chỉ nhận đặt bàn trong khung giờ 07:00–21:00.');
       return;
@@ -677,12 +768,20 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                       <CalendarDays size={16} />
                       <input
                         type="date"
-                        min={getLocalDateString()}
+                        min={minimumReservationDate}
                         required
                         value={form.reservation_date}
-                        onChange={(event) => updateForm('reservation_date', event.target.value)}
+                        onChange={(event) => {
+                          updateForm('reservation_date', event.target.value);
+                          setSuggestions([]);
+                          setSelectedSuggestion(null);
+                          setError('');
+                        }}
                       />
                     </span>
+                    {minimumReservationDate > today && (
+                      <small className="text-xs text-amber-700">Hôm nay đã hết giờ phục vụ; ngày sớm nhất có thể đặt là ngày mai.</small>
+                    )}
                   </label>
                   <div className="reservation-time-phone">
                     <label className="reservation-field">
@@ -695,7 +794,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                             value={reservationHour}
                             onChange={(event) => updateReservationTime(event.target.value, reservationMinute)}
                           >
-                            {RESERVATION_HOURS.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
+                            {availableHours.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
                           </select>
                           <span aria-hidden="true">:</span>
                           <select
@@ -703,8 +802,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                             value={reservationMinute}
                             onChange={(event) => updateReservationTime(reservationHour, event.target.value)}
                           >
-                            {(reservationHour === '21' ? ['00'] : RESERVATION_MINUTES)
-                              .map((minute) => <option key={minute} value={minute}>{minute}</option>)}
+                            {availableMinutes.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
                           </select>
                         </span>
                       </span>
@@ -725,7 +823,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                       {profilePhoneError && <small className="text-xs text-clay-600">Không thể tải số điện thoại từ hồ sơ: {profilePhoneError}</small>}
                     </label>
                   </div>
-                  <button type="submit" disabled={searching || loading || tables.length === 0} className="reservation-primary">
+                  <button type="submit" disabled={searching || loading || tables.length === 0 || bookingDateTimeUnavailable} className="reservation-primary">
                     {searching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                     Tìm bàn phù hợp
                   </button>
@@ -871,7 +969,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                   {holding ? 'Đang giữ bàn...' : 'Tiếp tục đặt bàn'}
                   <ArrowRight size={15} />
                 </button>
-                <p className="reservation-trust"><ShieldCheck size={14} /> Chỉ đặt bàn: cọc 50.000đ. Có đặt món trước: cọc 50% tổng tiền món. Món chỉ gửi bếp sau khi thu ngân xác nhận.</p>
+                <p className="reservation-trust"><ShieldCheck size={14} /> Chỉ đặt bàn: cọc 50.000đ. Có đặt món trước: cọc 50% tổng tiền món. Trước giờ đặt bàn 30 phút quý khách sẽ được liên hệ để xác nhận trước khi món được chuẩn bị. Nếu không đến quán sau thời gian đặt bàn thì tiền cọc sẽ bị mất và bàn đặt sẽ được trả về trạng thái trống</p>
               </>
             ) : (
               <div className="reservation-hold-content">

@@ -1,7 +1,7 @@
 // src/pages/TablesPage.jsx
 //
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound, UtensilsCrossed } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Loader2, CheckCircle2, Phone, CalendarClock, UserRound, UtensilsCrossed, MoveRight } from 'lucide-react';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import Alert from '../components/Alert';
@@ -32,6 +32,7 @@ export default function TablesPage() {
 
   const [tables, setTables] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
+  const [recoverableReservations, setRecoverableReservations] = useState([]);
   const [confirmedArrivalIds, setConfirmedArrivalIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
@@ -47,6 +48,10 @@ export default function TablesPage() {
   });
   const [billTable, setBillTable] = useState(null);
   const [paymentTable, setPaymentTable] = useState(null);
+  const [transferTarget, setTransferTarget] = useState(null);
+  const [transferTableIds, setTransferTableIds] = useState([]);
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferError, setTransferError] = useState('');
 
   const [showModal, setShowModal] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
@@ -65,7 +70,7 @@ export default function TablesPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await tablesApi.list();
+      const res = canOperateTables ? await tablesApi.listOperational() : await tablesApi.list();
       setTables(res.data.tables);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -74,22 +79,29 @@ export default function TablesPage() {
     }
   }
 
-  async function loadUpcoming() {
+  async function loadUpcoming(showSpinner = true) {
     if (!canOperateTables) return;
-    setUpcomingLoading(true);
+    if (showSpinner) setUpcomingLoading(true);
     try {
       const res = await reservationsApi.listUpcoming();
       setUpcoming(res.data.upcoming || []);
+      setRecoverableReservations(res.data.recoverable || []);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
-      setUpcomingLoading(false);
+      if (showSpinner) setUpcomingLoading(false);
     }
   }
 
   useEffect(() => {
     loadTables();
     loadUpcoming();
+  }, [canOperateTables]);
+
+  useEffect(() => {
+    if (!canOperateTables) return undefined;
+    const intervalId = setInterval(() => loadUpcoming(false), 30000);
+    return () => clearInterval(intervalId);
   }, [canOperateTables]);
 
   useEffect(() => {
@@ -101,6 +113,7 @@ export default function TablesPage() {
       setSuccess(`Bàn ${bill.table_id}: thu ngân đã xác nhận thanh toán. Khách có thể rời bàn.`);
       refreshOperationalData();
     });
+    socket.on('service:table-transferred', refreshOperationalData);
     return () => socket.disconnect();
   }, [canOperateTables]);
 
@@ -123,7 +136,11 @@ export default function TablesPage() {
           if (err.response?.status !== 404) throw err;
         }
         if ((billData?.items || []).length > 0) {
-          setPaymentTable({ table, bill: billData.bill, items: billData.items });
+          setPaymentTable({
+            table: { ...table, table_number: billData.bill.table_number || table.table_number },
+            bill: billData.bill,
+            items: billData.items,
+          });
           setSelectedTable(null);
           return;
         }
@@ -147,7 +164,7 @@ export default function TablesPage() {
 
   async function handleReservationAction(reservationId, action, refundAccount = {}) {
     if (action === 'cancel' && !Object.keys(refundAccount).length
-      && !confirm('Hủy đặt bàn này? Nếu hủy trễ hạn, khách sẽ mất cọc.')) return;
+      && !confirm('Khách đã trễ ít nhất 15 phút. Hủy sẽ ghi nhận mất cọc; nếu khách đến, có thể khôi phục trong 30 phút sau khi hủy (nếu bàn còn trống). Tiếp tục?')) return;
     const cancellationData = action === 'cancel' && !Object.keys(refundAccount).length
       ? { accept_forfeiture: true }
       : refundAccount;
@@ -176,6 +193,93 @@ export default function TablesPage() {
       }
       setError(message);
       return false;
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  function startReservationTransfer(reservation) {
+    const tableIds = String(reservation.table_ids || '')
+      .split(',')
+      .map((id) => Number(id.trim()))
+      .filter((id) => Number.isSafeInteger(id) && id > 0);
+    setTransferTarget({
+      type: 'reservation',
+      reservationId: Number(reservation.id),
+      partySize: Number(reservation.party_size),
+      tableIds,
+    });
+    setTransferTableIds([]);
+    setTransferError('');
+  }
+
+  function startOccupiedTransfer(table) {
+    if (table.current_reservation_id) {
+      const tableIds = tables
+        .filter((item) => Number(item.current_reservation_id) === Number(table.current_reservation_id))
+        .map((item) => Number(item.id));
+      setTransferTarget({
+        type: 'reservation',
+        reservationId: Number(table.current_reservation_id),
+        partySize: Number(table.current_reservation_party_size),
+        tableIds,
+      });
+      setTransferTableIds([]);
+    } else {
+      setTransferTarget({ type: 'walk-in', tableId: Number(table.id), tableNumber: table.table_number });
+      setTransferTableIds([]);
+    }
+    setTransferError('');
+    setSelectedTable(null);
+  }
+
+  function closeTransferModal() {
+    if (transferSaving) return;
+    setTransferTarget(null);
+    setTransferTableIds([]);
+  }
+
+  function toggleTransferTable(tableId) {
+    const id = Number(tableId);
+    setTransferTableIds((ids) => (
+      ids.includes(id) ? ids.filter((selectedId) => selectedId !== id) : [...ids, id]
+    ));
+  }
+
+  async function handleTransferSubmit(event) {
+    event.preventDefault();
+    if (!transferTarget) return;
+    setTransferSaving(true);
+    setTransferError('');
+    setSuccess('');
+    try {
+      const response = transferTarget.type === 'reservation'
+        ? await reservationsApi.transferTables(transferTarget.reservationId, transferTableIds)
+        : await tablesApi.transfer(transferTarget.tableId, transferTableIds[0]);
+      setSuccess(response.data.message);
+      setTransferTarget(null);
+      setTransferTableIds([]);
+      await refreshOperationalData();
+    } catch (err) {
+      setTransferError(getErrorMessage(err));
+      if (err.response?.status === 409) await refreshOperationalData();
+    } finally {
+      setTransferSaving(false);
+    }
+  }
+
+  async function handleRestoreReservation(reservationId) {
+    if (!confirm('Khôi phục đặt bàn và tiền cọc cho khách? Hệ thống sẽ giữ bàn cũ nếu còn trống, hoặc chọn bàn trống phù hợp khác.')) return;
+    setActionId(`restore-${reservationId}`);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await reservationsApi.restoreAfterStaffCancel(reservationId);
+      setSuccess(res.data.message);
+      await refreshOperationalData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+      if (err.response?.status === 409) await refreshOperationalData();
     } finally {
       setActionId(null);
     }
@@ -282,7 +386,7 @@ export default function TablesPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="font-display text-xl font-semibold text-ink">Đặt bàn sắp tới</h2>
-              <p className="text-sm text-slate-500">Xác nhận khi khách đến hoặc hủy trực tiếp tại quầy</p>
+              <p className="text-sm text-slate-500">Chỉ hủy khi khách đã trễ ít nhất 15 phút</p>
             </div>
             <button
               type="button"
@@ -297,13 +401,18 @@ export default function TablesPage() {
 
           {upcomingLoading ? (
             <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div>
-          ) : visibleUpcoming.length === 0 ? (
+          ) : visibleUpcoming.length === 0 && recoverableReservations.length === 0 ? (
             <div className="card text-center text-sm text-slate-500">Không có đặt bàn sắp tới.</div>
           ) : (
             <div className="space-y-3">
               {visibleUpcoming.map((reservation) => (
                 <div key={reservation.id} className="card flex flex-wrap items-center justify-between gap-4">
                   <div>
+                    {Number(reservation.late_cancel_eligible) > 0 && (
+                      <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                        Khách đã trễ quá 15 phút. Nhân viên có thể chủ động hủy; tiền cọc sẽ bị mất.
+                      </div>
+                    )}
                     <p className="flex items-center gap-2 font-medium text-ink">
                       <UserRound size={16} /> {reservation.customer_name || 'Khách đặt bàn'}
                     </p>
@@ -317,6 +426,15 @@ export default function TablesPage() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
+                      onClick={() => startReservationTransfer(reservation)}
+                      disabled={actionId === `reservation-${reservation.id}`}
+                      className="btn-secondary"
+                    >
+                      <MoveRight size={16} />
+                      Chuyển bàn
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleReservationAction(reservation.id, 'confirm')}
                       disabled={actionId === `reservation-${reservation.id}`}
                       className="btn-primary"
@@ -324,20 +442,55 @@ export default function TablesPage() {
                       {actionId === `reservation-${reservation.id}` ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                       Xác nhận khách đến
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => requestReservationCancellation(reservation)}
-                      disabled={actionId === `reservation-${reservation.id}` || Number(reservation.preorder_prepared)}
-                      className="btn-secondary text-clay-600"
-                    >
-                      Hủy đặt bàn
-                    </button>
+                    {Number(reservation.late_cancel_eligible) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => requestReservationCancellation(reservation)}
+                        disabled={actionId === `reservation-${reservation.id}` || Number(reservation.preorder_prepared)}
+                        className="btn-secondary border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                      >
+                        Hủy đặt bàn
+                      </button>
+                    )}
                     {Number(reservation.preorder_prepared) > 0 && (
-                      <span className="self-center text-xs text-slate-500">Món đã vào bill/bếp, không thể hủy</span>
+                      <span className="self-center text-xs text-slate-500">
+                        Món đã vào bill/bếp, không thể hủy
+                      </span>
                     )}
                   </div>
                 </div>
               ))}
+              {recoverableReservations.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="mb-3 font-semibold text-ink">Đơn đã hủy — còn thời gian khôi phục</h3>
+                  <div className="space-y-3">
+                    {recoverableReservations.map((reservation) => (
+                      <div key={reservation.id} className="card flex flex-wrap items-center justify-between gap-4 border-amber-300 bg-amber-50">
+                        <div>
+                          <p className="font-medium text-ink">
+                            {reservation.customer_name || 'Khách đặt bàn'} · Đơn #{reservation.id}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            Bàn {reservation.table_numbers || '—'} · Hủy lúc {reservation.cancelled_at}
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-amber-800">
+                            Cọc {Number(reservation.deposit_amount || 0).toLocaleString('vi-VN')}đ đang ghi nhận mất; có thể khôi phục trong 30 phút nếu còn bàn phù hợp.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreReservation(reservation.id)}
+                          disabled={actionId === `restore-${reservation.id}`}
+                          className="btn-primary"
+                        >
+                          {actionId === `restore-${reservation.id}` && <Loader2 size={16} className="animate-spin" />}
+                          Khôi phục đặt bàn
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -412,6 +565,14 @@ export default function TablesPage() {
                 <UtensilsCrossed size={16} />
                 Gọi món
               </button>
+              <button
+                type="button"
+                onClick={() => startOccupiedTransfer(selectedTable)}
+                className="btn-secondary w-full"
+              >
+                <MoveRight size={16} />
+                Chuyển khách sang bàn khác
+              </button>
               <button type="button" onClick={() => handleTableAction(selectedTable)} disabled={actionId === `table-${selectedTable.id}`} className="btn-secondary w-full">
                 {actionId === `table-${selectedTable.id}` && <Loader2 size={16} className="animate-spin" />}
                 Trả bàn / thanh toán
@@ -419,6 +580,100 @@ export default function TablesPage() {
             </div>
           )}
           </div>
+        </Modal>
+      )}
+
+      {transferTarget && (
+        <Modal
+          title={transferTarget.type === 'reservation' ? 'Chuyển bàn đặt trước' : `Chuyển khách từ bàn ${transferTarget.tableNumber}`}
+          onClose={closeTransferModal}
+        >
+          <form onSubmit={handleTransferSubmit} className="space-y-4">
+            <p className="text-sm text-slate-600">
+              {transferTarget.type === 'reservation'
+                ? `Bàn hiện tại: ${tables
+                  .filter((table) => transferTarget.tableIds.includes(Number(table.id)))
+                  .map((table) => table.table_number)
+                  .join(' + ')}. Chọn đầy đủ nhóm bàn đích, tổng sức chứa phải ít nhất ${transferTarget.partySize} khách.`
+                : 'Chọn một bàn trống để chuyển khách. Nhân viên chịu trách nhiệm xác nhận sức chứa phù hợp.'}
+            </p>
+
+            {transferTarget.type === 'reservation' ? (
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {tables
+                  .filter((table) => (
+                    table.status === 'trong' || transferTarget.tableIds.includes(Number(table.id))
+                  ))
+                  .map((table) => (
+                    <label key={table.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={transferTableIds.includes(Number(table.id))}
+                        onChange={() => toggleTransferTable(table.id)}
+                        className="h-4 w-4 accent-emerald-700"
+                      />
+                      <span className="flex-1 text-sm font-medium text-ink">
+                        Bàn {table.table_number}
+                        {transferTarget.tableIds.includes(Number(table.id)) && (
+                          <span className="ml-2 text-xs font-normal text-slate-500">bàn hiện tại</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-slate-500">{table.capacity} chỗ</span>
+                    </label>
+                  ))}
+              </div>
+            ) : (
+              <label className="block">
+                <span className="field-label">Bàn chuyển đến</span>
+                <select
+                  required
+                  value={transferTableIds[0] || ''}
+                  onChange={(event) => setTransferTableIds(event.target.value ? [Number(event.target.value)] : [])}
+                  className="field-input"
+                >
+                  <option value="" disabled>— Chọn bàn trống —</option>
+                  {tables
+                    .filter((table) => table.status === 'trong' && Number(table.id) !== transferTarget.tableId)
+                    .map((table) => (
+                      <option key={table.id} value={table.id}>
+                        Bàn {table.table_number} · {table.capacity} chỗ
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )}
+
+            {transferTarget.type === 'reservation' && (
+              <p className={`text-sm font-medium ${
+                transferTableIds.reduce((capacity, id) => (
+                  capacity + Number(tables.find((table) => Number(table.id) === id)?.capacity || 0)
+                ), 0) >= transferTarget.partySize ? 'text-emerald-700' : 'text-clay-600'
+              }`}>
+                Tổng sức chứa đã chọn: {transferTableIds.reduce((capacity, id) => (
+                  capacity + Number(tables.find((table) => Number(table.id) === id)?.capacity || 0)
+                ), 0)} / {transferTarget.partySize} khách
+              </p>
+            )}
+            {transferError && <Alert type="error">{transferError}</Alert>}
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={closeTransferModal} disabled={transferSaving}>
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={transferSaving || transferTableIds.length === 0 || (
+                  transferTarget.type === 'reservation'
+                  && transferTableIds.reduce((capacity, id) => (
+                    capacity + Number(tables.find((table) => Number(table.id) === id)?.capacity || 0)
+                  ), 0) < transferTarget.partySize
+                )}
+                className="btn-primary"
+              >
+                {transferSaving ? <Loader2 size={16} className="animate-spin" /> : <MoveRight size={16} />}
+                Xác nhận chuyển bàn
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
 
@@ -464,7 +719,16 @@ export default function TablesPage() {
       )}
 
       {billTable && (
-        <Modal title={`Gọi món — Bàn ${billTable.table_number}`} onClose={() => setBillTable(null)} widthClass="max-w-md">
+        <Modal
+          title={`Gọi món — ${billTable.current_reservation_id
+            ? `Nhóm bàn ${tables
+              .filter((table) => Number(table.current_reservation_id) === Number(billTable.current_reservation_id))
+              .map((table) => table.table_number)
+              .join(' + ')}`
+            : `Bàn ${billTable.table_number}`}`}
+          onClose={() => setBillTable(null)}
+          widthClass="max-w-md"
+        >
           <BillPanel tableId={billTable.id} canEdit={canOperateTables} />
         </Modal>
       )}

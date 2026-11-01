@@ -2,6 +2,10 @@ import client from './client';
 
 export const billsApi = {
   listMyHistory: () => client.get('/bills/my-history'),
+  listRestaurantReviews: (params) => client.get('/bills/reviews', { params }),
+  replyToReview: (reviewId, reply) => client.put(`/bills/reviews/${reviewId}/reply`, { reply }),
+  createReview: (billId, data) => client.post(`/bills/${billId}/review`, data),
+  updateReview: (billId, data) => client.put(`/bills/${billId}/review`, data),
   getByTable: (tableId) => client.get(`/bills/table/${tableId}`),
   addItem: (billId, data) => client.post(`/bills/${billId}/items`, data),
   removeItem: (billId, itemId) => client.delete(`/bills/${billId}/items/${itemId}`),

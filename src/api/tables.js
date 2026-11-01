@@ -3,8 +3,10 @@ import client from './client';
 
 export const tablesApi = {
   list: () => client.get('/tables'),
+  listOperational: () => client.get('/tables/operational'),
   getById: (id) => client.get(`/tables/${id}`),
   walkIn: (id) => client.patch(`/tables/${id}/walk-in`),
+  transfer: (id, toTableId) => client.patch(`/tables/${id}/move`, { to_table_id: toTableId }),
   release: (id) => client.patch(`/tables/${id}/release`),
   create: (data) => client.post('/tables', data),
   update: (id, data) => client.put(`/tables/${id}`, data),

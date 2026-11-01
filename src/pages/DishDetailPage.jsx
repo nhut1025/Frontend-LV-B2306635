@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Alert from '../components/Alert';
@@ -11,6 +11,8 @@ export default function DishDetailPage() {
   const [dish, setDish] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reviews, setReviews] = useState({ summary: null, reviews: [] });
+  const [reviewsError, setReviewsError] = useState('');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const images = useMemo(() => {
     if (dish?.images?.length) return dish.images;
@@ -19,6 +21,8 @@ export default function DishDetailPage() {
 
   useEffect(() => {
     let active = true;
+    setReviews({ summary: null, reviews: [] });
+    setReviewsError('');
     async function loadDish() {
       setLoading(true);
       setError('');
@@ -32,6 +36,12 @@ export default function DishDetailPage() {
         if (active) setError(getErrorMessage(err));
       } finally {
         if (active) setLoading(false);
+      }
+      try {
+        const response = await dishesApi.getReviews(id);
+        if (active) setReviews(response.data);
+      } catch (err) {
+        if (active) setReviewsError(getErrorMessage(err));
       }
     }
     loadDish();
@@ -118,6 +128,62 @@ export default function DishDetailPage() {
               </section>
             )}
           </div>
+
+          <section className="mt-10 border-t border-slate-200 pt-6" aria-labelledby="dish-reviews-heading">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 id="dish-reviews-heading" className="font-display text-xl font-semibold text-ink">
+                  Đánh giá từ thực khách
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Phản hồi từ khách đã thanh toán bill có món này.
+                </p>
+              </div>
+              {reviews.summary && reviews.summary.review_count > 0 && (
+                <div className="text-right text-sm text-slate-600">
+                  <p>{reviews.summary.review_count} lượt phản hồi về món</p>
+                  <p className="text-xs text-slate-500">
+                    {reviews.summary.like_count} thích · {reviews.summary.dislike_count} không thích
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {reviewsError && <div className="mt-4"><Alert type="error">{reviewsError}</Alert></div>}
+            {!reviewsError && reviews.summary?.review_count === 0 && (
+              <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                Món này chưa có đánh giá.
+              </p>
+            )}
+            {reviews.reviews.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {reviews.reviews.map((review) => (
+                  <article key={review.feedback_id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <time className="text-xs text-slate-400" dateTime={review.created_at}>
+                        {new Date(String(review.created_at).replace(' ', 'T')).toLocaleDateString('vi-VN')}
+                      </time>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-700">{review.comment}</p>
+                    <p className={`mt-3 flex items-center gap-1 text-sm font-medium ${
+                      review.sentiment === 'like' ? 'text-basil-700' : 'text-clay-600'
+                    }`}>
+                      {review.sentiment === 'like' ? <ThumbsUp size={15} /> : <ThumbsDown size={15} />}
+                      {review.sentiment === 'like' ? 'Thích món này' : 'Không thích món này'}
+                    </p>
+                    {review.manager_reply && (
+                      <div className="mt-4 rounded-lg border-l-4 border-basil-500 bg-basil-50 p-3">
+                        <p className="text-xs font-semibold text-basil-800">
+                          Phản hồi từ nhà hàng{review.manager_name ? ` · ${review.manager_name}` : ''}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{review.manager_reply}</p>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </article>
       )}
     </Layout>

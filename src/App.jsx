@@ -11,6 +11,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import DishesPage from './pages/DishesPage';
 import DishDetailPage from './pages/DishDetailPage';
 import TablesPage from './pages/TablesPage';
+import PublicTablesPage from './pages/PublicTablesPage';
 import ProfilePage from './pages/ProfilePage';
 import MyReservationsPage from './pages/MyReservationsPage';
 import StaffManagementPage from './pages/StaffManagementPage';
@@ -18,17 +19,33 @@ import PendingDepositsPage from './pages/PendingDepositsPage';
 import PendingRefundsPage from './pages/PendingRefundsPage';
 import PendingPreordersPage from './pages/PendingPreordersPage';
 import BankSettingsPage from './pages/BankSettingsPage';
+import TableTransferSettingsPage from './pages/TableTransferSettingsPage';
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
 import FinancePage from './pages/FinancePage';
 import CategoriesPage from './pages/CategoriesPage';
 import IngredientsPage from './pages/IngredientsPage';
+import RestaurantReviewsPage from './pages/RestaurantReviewsPage';
+import ManagerReviewsPage from './pages/ManagerReviewsPage';
+import PublicHomePage from './pages/PublicHomePage';
 
-// Trang chủ mặc định theo vai trò: bếp vào thẳng màn hình bếp, các vai trò khác vào sơ đồ bàn.
+// Người chưa đăng nhập xem trang giới thiệu; nhân viên đã đăng nhập vào đúng màn hình vận hành.
 function HomeRedirect() {
   const { user, loading } = useAuth();
   if (loading) return null;
-  return <Navigate to={user?.role === 'kitchen' ? '/kitchen' : '/tables'} replace />;
+  if (!user) return <PublicHomePage />;
+  return <Navigate to={user.role === 'kitchen' ? '/kitchen' : '/tables'} replace />;
+}
+
+function TablesRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <PublicTablesPage />;
+  return (
+    <ProtectedRoute allowedRoles={['customer', 'phuc_vu', 'thu_ngan', 'manager']}>
+      <TablesPage />
+    </ProtectedRoute>
+  );
 }
 
 export default function App() {
@@ -44,29 +61,31 @@ export default function App() {
 
           <Route
             path="/dishes"
+            element={<DishesPage />}
+          />
+
+          <Route
+            path="/restaurant-reviews"
+            element={<RestaurantReviewsPage />}
+          />
+
+          <Route
+            path="/manage-reviews"
             element={
-              <ProtectedRoute>
-                <DishesPage />
+              <ProtectedRoute allowedRoles={['manager']}>
+                <ManagerReviewsPage />
               </ProtectedRoute>
             }
           />
 
           <Route
             path="/dishes/category/:categoryId"
-            element={
-              <ProtectedRoute>
-                <DishesPage />
-              </ProtectedRoute>
-            }
+            element={<DishesPage />}
           />
 
           <Route
             path="/dishes/:id"
-            element={
-              <ProtectedRoute>
-                <DishDetailPage />
-              </ProtectedRoute>
-            }
+            element={<DishDetailPage />}
           />
 
           <Route
@@ -98,11 +117,7 @@ export default function App() {
 
           <Route
             path="/tables"
-            element={
-              <ProtectedRoute allowedRoles={['customer', 'phuc_vu', 'thu_ngan', 'manager']}>
-                <TablesPage />
-              </ProtectedRoute>
-            }
+            element={<TablesRoute />}
           />
 
           <Route
@@ -160,6 +175,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['manager']}>
                 <BankSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/table-transfer-settings"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <TableTransferSettingsPage />
               </ProtectedRoute>
             }
           />

@@ -1,6 +1,6 @@
 // src/pages/DishesPage.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Loader2, ImagePlus, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, ImagePlus, X, Search, CalendarDays, Clock3, MapPin, Phone } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { dishesApi } from '../api/dishes';
 import { ingredientsApi } from '../api/ingredients';
 import { categoriesApi } from '../api/categories';
+import { reservationsApi } from '../api/reservations';
 import { getErrorMessage } from '../api/client';
 
 const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredient_ids: [] };
@@ -18,17 +19,44 @@ function formatPrice(value) {
   return digits ? Number(digits).toLocaleString('vi-VN') : '';
 }
 
+function normalizeSearchText(value) {
+  return String(value ?? '')
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isAvailable(dish) {
+  return dish.is_available === true || Number(dish.is_available) === 1;
+}
+
+function reservationDateTime(reservation) {
+  const date = String(reservation.reservation_date || '').slice(0, 10);
+  const time = String(reservation.reservation_time || '').slice(0, 8);
+  const value = new Date(`${date}T${time}`);
+  return Number.isNaN(value.getTime()) ? null : value;
+}
+
 export default function DishesPage() {
   const { categoryId } = useParams();
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
   const canToggleAvailability = ['manager', 'phuc_vu', 'kitchen'].includes(user?.role);
+  const isCustomerFacing = !user || user.role === 'customer';
 
   const [dishes, setDishes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState('name');
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [upcomingReservation, setUpcomingReservation] = useState(null);
+  const [upcomingReservationError, setUpcomingReservationError] = useState('');
 
   const [showDishModal, setShowDishModal] = useState(false);
   const [editingDish, setEditingDish] = useState(null);
@@ -53,6 +81,22 @@ export default function DishesPage() {
     ? groupedDishes.find((group) => group.id === 'uncategorized')
     : groupedDishes.find((group) => group.id === String(categoryId));
   const visibleDishes = categoryId ? selectedGroup?.dishes || [] : dishes;
+  const filteredDishes = useMemo(() => {
+    const queryTerms = normalizeSearchText(searchTerm).split(' ').filter(Boolean);
+    return visibleDishes
+      .filter((dish) => {
+        if (queryTerms.length === 0) return true;
+        const searchableText = normalizeSearchText(`${dish.name} ${dish.category} ${dish.description}`);
+        return queryTerms.every((term) => searchableText.includes(term));
+      })
+      .filter((dish) => !availableOnly || isAvailable(dish))
+      .slice()
+      .sort((first, second) => {
+        if (sortOrder === 'price-asc') return Number(first.price) - Number(second.price);
+        if (sortOrder === 'price-desc') return Number(second.price) - Number(first.price);
+        return first.name.localeCompare(second.name, 'vi');
+      });
+  }, [availableOnly, searchTerm, sortOrder, visibleDishes]);
 
   async function loadAll() {
     setLoading(true);
@@ -74,6 +118,32 @@ export default function DishesPage() {
   useEffect(() => {
     loadAll();
   }, [isManager]);
+
+  useEffect(() => {
+    if (user?.role !== 'customer') {
+      setUpcomingReservation(null);
+      setUpcomingReservationError('');
+      return undefined;
+    }
+
+    let active = true;
+    reservationsApi.listMine()
+      .then((response) => {
+        if (!active) return;
+        const now = Date.now();
+        const nextReservation = (response.data.reservations || [])
+          .filter((reservation) => ['giu_tam', 'da_dat'].includes(reservation.status))
+          .map((reservation) => ({ ...reservation, startsAt: reservationDateTime(reservation) }))
+          .filter((reservation) => reservation.startsAt && reservation.startsAt.getTime() >= now)
+          .sort((first, second) => first.startsAt - second.startsAt)[0] || null;
+        setUpcomingReservation(nextReservation);
+      })
+      .catch((err) => {
+        if (active) setUpcomingReservationError(getErrorMessage(err));
+      });
+
+    return () => { active = false; };
+  }, [user?.id, user?.role]);
 
   function openCreateModal() {
     setEditingDish(null);
@@ -231,8 +301,9 @@ export default function DishesPage() {
 
   async function handleToggleAvailability(dish) {
     try {
-      await dishesApi.toggleAvailability(dish.id, !dish.is_available);
-      setDishes((prev) => prev.map((d) => (d.id === dish.id ? { ...d, is_available: !d.is_available } : d)));
+      const nextAvailability = !isAvailable(dish);
+      await dishesApi.toggleAvailability(dish.id, nextAvailability);
+      setDishes((prev) => prev.map((d) => (d.id === dish.id ? { ...d, is_available: nextAvailability } : d)));
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -240,13 +311,52 @@ export default function DishesPage() {
 
   return (
     <Layout>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mx-auto max-w-6xl space-y-7 pb-8">
+      {isCustomerFacing && (
+        <section className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-basil-700 via-basil-600 to-emerald-800 px-6 py-8 text-white shadow-sm sm:flex-row sm:items-center sm:px-9 sm:py-10">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-basil-100">Quán Ăn Minh Nhựt</p>
+            <h1 className="mt-2 font-display text-3xl font-semibold sm:text-4xl">Món ngon, sẵn sàng chờ bạn</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-basil-50">
+              Khám phá thực đơn nhà làm trong không gian ấm cúng. Mở cửa hằng ngày từ 07:00 đến 21:00.
+            </p>
+          </div>
+          <Link to="/tables" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-basil-700 transition hover:bg-basil-50">
+            <CalendarDays size={17} /> Đặt bàn ngay
+          </Link>
+        </section>
+      )}
+
+      {user?.role === 'customer' && upcomingReservationError && (
+        <Alert type="error">Không tải được lịch đặt bàn sắp tới: {upcomingReservationError}</Alert>
+      )}
+      {user?.role === 'customer' && upcomingReservation && (
+        <section className="rounded-2xl border border-basil-100 bg-basil-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-basil-700">Lịch đặt bàn sắp tới</p>
+            <p className="mt-1 font-semibold text-ink">
+              {upcomingReservation.startsAt.toLocaleDateString('vi-VN')} lúc {upcomingReservation.startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+              <span className="mx-2 text-slate-400">·</span>
+              {upcomingReservation.party_size} khách
+              {upcomingReservation.table_ids && <span className="ml-2">· Bàn {upcomingReservation.table_ids}</span>}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {upcomingReservation.status === 'da_dat' ? 'Đã đặt, đã xác nhận cọc' : 'Đang giữ bàn, vui lòng hoàn tất cọc đúng hạn'}
+            </p>
+          </div>
+          <Link to="/my-reservations" className="mt-3 inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-basil-700 hover:text-basil-800 sm:mt-0">
+            Xem lịch sử đặt bàn
+          </Link>
+        </section>
+      )}
+
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink">
+          <h2 className="font-display text-2xl font-semibold text-ink">
             {categoryId && !selectedGroup ? 'Danh mục không tồn tại' : selectedGroup?.name || 'Thực đơn'}
-          </h1>
+          </h2>
           <p className="text-sm text-slate-500">
-            {categoryId ? `${visibleDishes.length} món trong danh mục` : `${dishes.length} món trong thực đơn`}
+            {categoryId ? `${filteredDishes.length} món trong danh mục` : `${filteredDishes.length} món trong thực đơn`}
           </p>
         </div>
         {isManager && (
@@ -259,7 +369,38 @@ export default function DishesPage() {
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
 
-      <nav aria-label="Danh mục món ăn" className="mb-6 flex gap-2 overflow-x-auto border-b border-slate-200 pb-3">
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center">
+        <label className="relative block">
+          <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Tìm món không dấu theo tên, danh mục..."
+            aria-label="Tìm món theo tên, danh mục hoặc mô tả"
+            className="field-input pl-10"
+          />
+        </label>
+        <label>
+          <span className="sr-only">Sắp xếp món ăn</span>
+          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="field-input">
+            <option value="name">Sắp xếp: Tên món</option>
+            <option value="price-asc">Giá: Thấp đến cao</option>
+            <option value="price-desc">Giá: Cao đến thấp</option>
+          </select>
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 px-1 text-sm font-medium text-slate-600">
+          <input
+            type="checkbox"
+            checked={availableOnly}
+            onChange={(event) => setAvailableOnly(event.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-basil-600 focus:ring-basil-500"
+          />
+          Chỉ món còn hàng
+        </label>
+      </div>
+
+      <nav aria-label="Danh mục món ăn" className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-3">
         <Link
           to="/dishes"
           aria-current={!categoryId ? 'page' : undefined}
@@ -269,7 +410,7 @@ export default function DishesPage() {
         >
           Tất cả món <span className="ml-1 opacity-75">{dishes.length}</span>
         </Link>
-        {groupedDishes.map((group) => {
+        {groupedDishes.filter((group) => group.dishes.length > 0).map((group) => {
           const active = String(categoryId) === group.id;
           return (
             <Link
@@ -292,9 +433,11 @@ export default function DishesPage() {
         </div>
       ) : categoryId && !selectedGroup ? (
         <div className="card text-center text-sm text-slate-500">Danh mục này không tồn tại.</div>
-      ) : visibleDishes.length === 0 ? (
+      ) : filteredDishes.length === 0 ? (
         <div className="card text-center text-sm text-slate-500">
-          {categoryId ? 'Danh mục này chưa có món ăn nào.' : 'Chưa có món ăn nào.'}
+          {searchTerm || availableOnly
+            ? 'Không tìm thấy món phù hợp với bộ lọc hiện tại.'
+            : categoryId ? 'Danh mục này chưa có món ăn nào.' : 'Chưa có món ăn nào.'}
           {isManager && categories.length === 0 && (
             <p className="mt-2">
               <Link to="/categories" className="font-medium text-basil-600 hover:text-basil-700">Tạo danh mục món ăn</Link>
@@ -303,69 +446,103 @@ export default function DishesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {visibleDishes.map((dish) => (
-                      <div key={dish.id} className="card flex flex-col gap-3">
-                        {dish.image_url && (
-                          <img
-                            src={dish.image_url}
-                            alt={dish.name}
-                            className="h-auto max-h-64 w-full rounded-xl bg-slate-50 object-contain"
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                          />
-                        )}
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <h3 className="font-display text-base font-semibold text-ink">
-                              <Link to={`/dishes/${dish.id}`} className="hover:text-basil-600">{dish.name}</Link>
-                            </h3>
-                          </div>
-                          <p className="whitespace-nowrap font-mono text-sm font-semibold text-ink">
-                            {Number(dish.price).toLocaleString('vi-VN')}đ
-                          </p>
-                        </div>
+          {filteredDishes.map((dish) => {
+            const available = isAvailable(dish);
+            return (
+              <article key={dish.id} className="card flex flex-col gap-3">
+                <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-slate-50">
+                  {dish.image_url ? (
+                    <img
+                      src={dish.image_url}
+                      alt={dish.name}
+                      className={`h-full w-full object-cover transition ${available ? '' : 'opacity-45 grayscale'}`}
+                      onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-slate-400">Chưa có hình ảnh</div>
+                  )}
+                  {!available && (
+                    <span className="absolute left-0 top-4 -translate-x-1 rotate-[-35deg] bg-clay-600 px-8 py-1 text-xs font-bold uppercase tracking-wider text-white shadow">
+                      Hết hàng
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-basil-700">
+                      {dish.category || 'Khác'}
+                    </p>
+                    <h3 className="font-display text-base font-semibold text-ink">
+                      <Link to={`/dishes/${dish.id}`} className="hover:text-basil-600">{dish.name}</Link>
+                    </h3>
+                  </div>
+                  <p className="whitespace-nowrap font-mono text-sm font-semibold text-ink">
+                    {Number(dish.price).toLocaleString('vi-VN')}đ
+                  </p>
+                </div>
+                {dish.description && <p className="line-clamp-2 text-sm text-slate-500">{dish.description}</p>}
 
-                        {dish.description && <p className="line-clamp-2 text-sm text-slate-500">{dish.description}</p>}
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                  <Link to={`/dishes/${dish.id}`} className="inline-flex items-center rounded-full bg-basil-50 px-3.5 py-2 text-xs font-semibold text-basil-700 transition hover:bg-basil-100">
+                    Xem chi tiết
+                  </Link>
+                  {canToggleAvailability ? (
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={available}
+                        onChange={() => handleToggleAvailability(dish)}
+                        className="h-4 w-4 rounded border-slate-300 text-basil-500 focus:ring-basil-500"
+                      />
+                      {available ? 'Còn hàng' : 'Hết hàng'}
+                    </label>
+                  ) : (
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${available ? 'bg-basil-50 text-basil-700' : 'bg-clay-50 text-clay-600'}`}>
+                      {available ? 'Còn hàng' : 'Hết hàng'}
+                    </span>
+                  )}
 
-                        <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
-                          <Link to={`/dishes/${dish.id}`} className="text-xs font-semibold text-basil-600 hover:text-basil-700">
-                            Xem chi tiết
-                          </Link>
-                          <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                            <input
-                              type="checkbox"
-                              checked={dish.is_available}
-                              disabled={!canToggleAvailability}
-                              onChange={() => handleToggleAvailability(dish)}
-                              className="h-4 w-4 rounded border-slate-300 text-basil-500 focus:ring-basil-500"
-                            />
-                            {dish.is_available ? 'Còn hàng' : 'Hết hàng'}
-                          </label>
-
-                          {isManager && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => openEditModal(dish)}
-                                disabled={loadingDishId !== null}
-                                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-basil-600"
-                                aria-label="Sửa"
-                              >
-                                {loadingDishId === dish.id
-                                  ? <Loader2 size={15} className="animate-spin" />
-                                  : <Pencil size={15} />}
-                              </button>
-                              <button
-                                onClick={() => handleDeleteDish(dish)}
-                                className="rounded-full p-1.5 text-slate-400 hover:bg-clay-50 hover:text-clay-500"
-                                aria-label="Xoá"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  {isManager && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openEditModal(dish)}
+                        disabled={loadingDishId !== null}
+                        className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-basil-600"
+                        aria-label="Sửa"
+                      >
+                        {loadingDishId === dish.id
+                          ? <Loader2 size={15} className="animate-spin" />
+                          : <Pencil size={15} />}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDish(dish)}
+                        className="rounded-full p-1.5 text-slate-400 hover:bg-clay-50 hover:text-clay-500"
+                        aria-label="Xoá"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
+      )}
+
+      {isCustomerFacing && (
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+          <h2 className="font-display text-xl font-semibold text-ink">Thông tin quán</h2>
+          <div className="mt-4 grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
+            <p className="flex items-start gap-2"><MapPin size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Địa chỉ: Cần Thơ</span></p>
+            <p className="flex items-start gap-2"><Phone size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Điện thoại: <a href="tel:0942726775" className="font-medium text-basil-700 hover:underline">0942726775</a></span></p>
+            <p className="flex items-start gap-2"><Clock3 size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Giờ mở cửa: Hằng ngày, 07:00–21:00</span></p>
+            <p className="flex items-start gap-2"><CalendarDays size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Đặt bàn cần cọc 50.000đ; hoặc 50% bill nếu đặt món trước bàn được giữ trong 15 phút để hoàn tất thanh toán.</span></p>
+          </div>
+          <Link to="/tables" className="mt-5 inline-flex items-center rounded-full bg-basil-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-basil-700">
+            Xem sơ đồ và đặt bàn
+          </Link>
+        </section>
       )}
 
       {showDishModal && (
@@ -518,6 +695,7 @@ export default function DishesPage() {
           </form>
         </Modal>
       )}
+      </div>
     </Layout>
   );
 }

@@ -229,14 +229,17 @@
 .floor-tabletop strong { max-width: 100%; overflow: hidden; font-size: clamp(8px, 1vw, 11px); font-weight: 750; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .floor-tabletop small { display: inline-flex; align-items: center; gap: 2px; color: #6d7c71; font-size: clamp(6px, .72vw, 8px); line-height: 1.1; }
 .floor-table-status { position: absolute; top: calc(100% - 5px); left: 50%; z-index: 2; color: #637a68; font-size: 7px; font-weight: 700; text-shadow: 0 1px 3px #faf8f1; white-space: nowrap; transform: translateX(-50%); }
-.floor-table.booked .floor-tabletop { border-color: #c4867a; background: #f2dfd9; }
-.floor-table.booked .floor-table-status { color: #a36d64; }
-.floor-table.held .floor-tabletop { border-color: #c6a45d; background: #f3ebd5; }
-.floor-table.held .floor-table-status { color: #937d47; }
-.floor-table.occupied .floor-tabletop { border-color: #92968f; background: #e4e5e1; }
-.floor-table.occupied .floor-table-status { color: #767d76; }
-.floor-table.is-highlighted .floor-tabletop { border-color: #398657; background: #cce8d1; }
-.floor-table.is-selected .floor-tabletop { border-color: #b98a3c; background: #f4e2b8; }
+.floor-table.available .floor-tabletop { border-color: #15803d; background: #dcfce7; }
+.floor-table.available .floor-table-status { color: #166534; }
+.floor-table.booked .floor-tabletop { border-color: #7c3aed; background: #ede9fe; }
+.floor-table.booked .floor-table-status { color: #6d28d9; }
+.floor-table.held .floor-tabletop { border-color: #d97706; background: #ffedd5; }
+.floor-table.held .floor-table-status { color: #b45309; }
+.floor-table.occupied .floor-tabletop { border-color: #dc2626; background: #fee2e2; }
+.floor-table.occupied .floor-table-status { color: #b91c1c; }
+.floor-table.is-highlighted .floor-tabletop { border-width: 3px; }
+.floor-table.is-selected .floor-tabletop { border-color: #0284c7; background: #e0f2fe; color: #0c4a6e; }
+.floor-table.is-selected .floor-table-status { color: #0369a1; }
 
 .floor-state {
   position: absolute;
@@ -266,10 +269,11 @@
 }
 
 .reservation-map-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.reservation-map-legend i { width: 8px; height: 8px; border: 1px solid #b5ceb9; border-radius: 50%; background: #e4efe5; }
-.reservation-map-legend .legend-booked { border-color: #d9b1a7; background: #f2dfd9; }
-.reservation-map-legend .legend-occupied { border-color: #aeb1aa; background: #ff5959; }
-.reservation-map-legend .legend-selected { border-color: #c49a52; background: #f4e2b8; }
+.reservation-map-legend i { width: 10px; height: 10px; border: 1px solid #15803d; border-radius: 50%; background: #dcfce7; }
+.reservation-map-legend .legend-booked { border-color: #7c3aed; background: #ede9fe; }
+.reservation-map-legend .legend-held { border-color: #d97706; background: #ffedd5; }
+.reservation-map-legend .legend-occupied { border-color: #dc2626; background: #fee2e2; }
+.reservation-map-legend .legend-selected { border-color: #0284c7; background: #e0f2fe; }
 .reservation-map-legend .map-tip { margin-left: auto; color: #929a92; }
 
 .reservation-panel {
