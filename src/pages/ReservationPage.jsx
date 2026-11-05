@@ -9,6 +9,7 @@ import Alert from '../components/Alert';
 import { useAuth } from '../context/AuthContext';
 import { dishesApi } from '../api/dishes';
 import { reservationsApi } from '../api/reservations';
+import { settingsApi } from '../api/settings';
 import { usersApi } from '../api/users';
 import { getErrorMessage } from '../api/client';
 import './ReservationPage.css';
@@ -18,7 +19,6 @@ const TABLE_SLOTS = [
   { x: 21, y: 56 }, { x: 39, y: 56 }, { x: 57, y: 56 }, { x: 76, y: 56 },
   { x: 30, y: 80 }, { x: 49, y: 80 }, { x: 69, y: 80 },
 ];
-const RESERVATION_HOURS = Array.from({ length: 15 }, (_, index) => String(index + 7).padStart(2, '0'));
 const RESERVATION_MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
 const STATUS_LABEL = {
   trong: 'Trống',
@@ -37,9 +37,10 @@ function getLocalDateString(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-function getMinimumReservationDate(now) {
+function getMinimumReservationDate(now, closeTime) {
   const closingTime = new Date(now);
-  closingTime.setHours(21, 0, 0, 0);
+  const [closingHour, closingMinute] = closeTime.split(':').map(Number);
+  closingTime.setHours(closingHour, closingMinute, 0, 0);
   if (now < closingTime) return getLocalDateString(now);
 
   const nextOpenDate = new Date(now);
@@ -54,8 +55,8 @@ function getEarliestReservationTime(now) {
   return `${String(earliest.getHours()).padStart(2, '0')}:${String(earliest.getMinutes()).padStart(2, '0')}`;
 }
 
-function isReservationDateTimeFuture(date, time, now) {
-  if (!date || !time || !isWithinReservationHours(time)) return false;
+function isReservationDateTimeFuture(date, time, now, openTime, closeTime) {
+  if (!date || !time || !isWithinReservationHours(time, openTime, closeTime)) return false;
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute] = time.split(':').map(Number);
   const requestedAt = new Date(year, month - 1, day, hour, minute);
@@ -71,8 +72,16 @@ function countdownText(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-function isWithinReservationHours(time) {
-  return time >= '07:00' && time <= '21:00';
+function isWithinReservationHours(time, openTime, closeTime) {
+  return time >= openTime && time <= closeTime;
+}
+
+function getReservationHours(openTime, closeTime) {
+  const firstHour = Number(openTime.slice(0, 2));
+  const lastHour = Number(closeTime.slice(0, 2));
+  return Array.from({ length: lastHour - firstHour + 1 }, (_, index) =>
+    String(index + firstHour).padStart(2, '0')
+  );
 }
 
 function tableName(table) {
@@ -386,10 +395,29 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   const [panelVisible, setPanelVisible] = useState(true);
   const [showDishMenu, setShowDishMenu] = useState(false);
   const [showAllDishes, setShowAllDishes] = useState(false);
+  const [reservationRules, setReservationRules] = useState({
+    reservation_open_time: '07:00',
+    reservation_close_time: '21:00',
+    reservation_hold_minutes: 15,
+  });
   const expiryRef = useRef(null);
   const today = getLocalDateString(now);
-  const minimumReservationDate = getMinimumReservationDate(now);
+  const openTime = reservationRules.reservation_open_time;
+  const closeTime = reservationRules.reservation_close_time;
+  const minimumReservationDate = getMinimumReservationDate(now, closeTime);
   const earliestReservationTime = getEarliestReservationTime(now);
+
+  useEffect(() => {
+    let active = true;
+    settingsApi.getReservationRules()
+      .then((response) => {
+        if (active) setReservationRules(response.data);
+      })
+      .catch((requestError) => {
+        if (active) setError(getErrorMessage(requestError));
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const intervalId = setInterval(() => setNow(new Date()), 15000);
@@ -401,7 +429,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
       setForm((current) => ({
         ...current,
         reservation_date: minimumReservationDate,
-        reservation_time: '07:00',
+        reservation_time: openTime,
       }));
       setSuggestions([]);
       setSelectedSuggestion(null);
@@ -409,16 +437,27 @@ export default function ReservationPage({ embedded = false, tables = [], loading
       return;
     }
 
-    if (
-      form.reservation_date === today
-      && isWithinReservationHours(earliestReservationTime)
-      && form.reservation_time < earliestReservationTime
-    ) {
-      setForm((current) => ({ ...current, reservation_time: earliestReservationTime }));
+    if (!form.reservation_date) return;
+    const earliestToday = earliestReservationTime > openTime ? earliestReservationTime : openTime;
+    if (form.reservation_date === today && earliestToday > closeTime) {
+      setForm((current) => ({
+        ...current,
+        reservation_date: minimumReservationDate,
+        reservation_time: openTime,
+      }));
+      setSuggestions([]);
+      setSelectedSuggestion(null);
+      return;
+    }
+
+    const minimumTime = form.reservation_date === today ? earliestToday : openTime;
+    if (!isWithinReservationHours(form.reservation_time, openTime, closeTime)
+      || form.reservation_time < minimumTime) {
+      setForm((current) => ({ ...current, reservation_time: minimumTime }));
       setSuggestions([]);
       setSelectedSuggestion(null);
     }
-  }, [form.reservation_date, form.reservation_time, minimumReservationDate, today, earliestReservationTime]);
+  }, [form.reservation_date, form.reservation_time, minimumReservationDate, today, earliestReservationTime, openTime, closeTime]);
 
   useEffect(() => {
     let active = true;
@@ -495,18 +534,23 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   const searched = suggestions.length > 0 || Boolean(form.party_size && error && !hold);
   const [reservationHour, reservationMinute] = form.reservation_time.split(':');
   const sameDayReservation = form.reservation_date === today;
-  const availableHours = RESERVATION_HOURS.filter((hour) => {
-    const lastSelectableTime = hour === '21' ? '21:00' : `${hour}:59`;
+  const availableHours = getReservationHours(openTime, closeTime).filter((hour) => {
+    const lastSelectableTime = hour === closeTime.slice(0, 2) ? closeTime : `${hour}:59`;
     return !sameDayReservation || lastSelectableTime >= earliestReservationTime;
   });
-  const availableMinutes = (reservationHour === '21' ? ['00'] : RESERVATION_MINUTES).filter((minute) => (
-    !sameDayReservation || `${reservationHour}:${minute}` >= earliestReservationTime
-  ));
+  const firstMinute = reservationHour === openTime.slice(0, 2) ? Number(openTime.slice(3, 5)) : 0;
+  const lastMinute = reservationHour === closeTime.slice(0, 2) ? Number(closeTime.slice(3, 5)) : 59;
+  const availableMinutes = RESERVATION_MINUTES.filter((minute) => {
+    const selectedTime = `${reservationHour}:${minute}`;
+    return Number(minute) >= firstMinute
+      && Number(minute) <= lastMinute
+      && (!sameDayReservation || selectedTime >= earliestReservationTime);
+  });
   const reservationDateUnavailable = Boolean(
     form.reservation_date && form.reservation_date < minimumReservationDate
   );
   const reservationTimeUnavailable = sameDayReservation
-    && !isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now);
+    && !isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now, openTime, closeTime);
   const bookingDateTimeUnavailable = reservationDateUnavailable || reservationTimeUnavailable;
 
   function updateForm(field, value) {
@@ -515,7 +559,10 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   }
 
   function updateReservationTime(hour, minute) {
-    updateForm('reservation_time', `${hour}:${hour === '21' ? '00' : minute}`);
+    const earliestMinute = hour === openTime.slice(0, 2) ? Number(openTime.slice(3, 5)) : 0;
+    const latestMinute = hour === closeTime.slice(0, 2) ? Number(closeTime.slice(3, 5)) : 59;
+    const selectedMinute = Math.min(latestMinute, Math.max(earliestMinute, Number(minute)));
+    updateForm('reservation_time', `${hour}:${String(selectedMinute).padStart(2, '0')}`);
     setError('');
   }
 
@@ -578,12 +625,12 @@ export default function ReservationPage({ embedded = false, tables = [], loading
       setError('Vui lòng chọn ngày và giờ đặt bàn.');
       return;
     }
-    if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now)) {
-      setError('Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ 07:00–21:00.');
+    if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now, openTime, closeTime)) {
+      setError(`Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ ${openTime}–${closeTime}.`);
       return;
     }
-    if (!isWithinReservationHours(form.reservation_time)) {
-      setError('Nhà hàng chỉ nhận đặt bàn trong khung giờ 07:00–21:00.');
+    if (!isWithinReservationHours(form.reservation_time, openTime, closeTime)) {
+      setError(`Nhà hàng chỉ nhận đặt bàn trong khung giờ ${openTime}–${closeTime}.`);
       return;
     }
     if (tablesError) {
@@ -652,12 +699,12 @@ export default function ReservationPage({ embedded = false, tables = [], loading
   }
 
   async function handleCreateReservation() {
-    if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, new Date())) {
-      setError('Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ 07:00–21:00.');
+    if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, new Date(), openTime, closeTime)) {
+      setError(`Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ ${openTime}–${closeTime}.`);
       return;
     }
-    if (!isWithinReservationHours(form.reservation_time)) {
-      setError('Nhà hàng chỉ nhận đặt bàn trong khung giờ 07:00–21:00.');
+    if (!isWithinReservationHours(form.reservation_time, openTime, closeTime)) {
+      setError(`Nhà hàng chỉ nhận đặt bàn trong khung giờ ${openTime}–${closeTime}.`);
       return;
     }
     if (!selectedSuggestion) {
@@ -806,7 +853,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                           </select>
                         </span>
                       </span>
-                      <small className="text-xs text-slate-500">Giờ phục vụ: 07:00–21:00</small>
+                      <small className="text-xs text-slate-500">Giờ phục vụ: {openTime}–{closeTime}</small>
                     </label>
                     <label className="reservation-field">
                       <span className="reservation-label">Số điện thoại</span>

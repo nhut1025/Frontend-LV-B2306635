@@ -10,6 +10,7 @@ import { dishesApi } from '../api/dishes';
 import { ingredientsApi } from '../api/ingredients';
 import { categoriesApi } from '../api/categories';
 import { reservationsApi } from '../api/reservations';
+import { settingsApi } from '../api/settings';
 import { getErrorMessage } from '../api/client';
 
 const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredient_ids: [] };
@@ -57,6 +58,11 @@ export default function DishesPage() {
   const [availableOnly, setAvailableOnly] = useState(false);
   const [upcomingReservation, setUpcomingReservation] = useState(null);
   const [upcomingReservationError, setUpcomingReservationError] = useState('');
+  const [reservationRules, setReservationRules] = useState({
+    reservation_open_time: '07:00',
+    reservation_close_time: '21:00',
+    reservation_hold_minutes: 15,
+  });
 
   const [showDishModal, setShowDishModal] = useState(false);
   const [editingDish, setEditingDish] = useState(null);
@@ -118,6 +124,12 @@ export default function DishesPage() {
   useEffect(() => {
     loadAll();
   }, [isManager]);
+
+  useEffect(() => {
+    settingsApi.getReservationRules()
+      .then((response) => setReservationRules(response.data))
+      .catch((requestError) => setError(getErrorMessage(requestError)));
+  }, []);
 
   useEffect(() => {
     if (user?.role !== 'customer') {
@@ -318,7 +330,7 @@ export default function DishesPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-basil-100">Quán Ăn Minh Nhựt</p>
             <h1 className="mt-2 font-display text-3xl font-semibold sm:text-4xl">Món ngon, sẵn sàng chờ bạn</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-basil-50">
-              Khám phá thực đơn nhà làm trong không gian ấm cúng. Mở cửa hằng ngày từ 07:00 đến 21:00.
+              Khám phá thực đơn nhà làm trong không gian ấm cúng. Mở cửa hằng ngày từ {reservationRules.reservation_open_time} đến {reservationRules.reservation_close_time}.
             </p>
           </div>
           <Link to="/tables" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-basil-700 transition hover:bg-basil-50">
@@ -536,8 +548,8 @@ export default function DishesPage() {
           <div className="mt-4 grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
             <p className="flex items-start gap-2"><MapPin size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Địa chỉ: Cần Thơ</span></p>
             <p className="flex items-start gap-2"><Phone size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Điện thoại: <a href="tel:0942726775" className="font-medium text-basil-700 hover:underline">0942726775</a></span></p>
-            <p className="flex items-start gap-2"><Clock3 size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Giờ mở cửa: Hằng ngày, 07:00–21:00</span></p>
-            <p className="flex items-start gap-2"><CalendarDays size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Đặt bàn cần cọc 50.000đ; hoặc 50% bill nếu đặt món trước bàn được giữ trong 15 phút để hoàn tất thanh toán.</span></p>
+            <p className="flex items-start gap-2"><Clock3 size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Giờ mở cửa: Hằng ngày, {reservationRules.reservation_open_time}–{reservationRules.reservation_close_time}</span></p>
+            <p className="flex items-start gap-2"><CalendarDays size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Đặt bàn cần cọc 50.000đ; hoặc 50% bill nếu đặt món trước. Bàn được giữ trong {reservationRules.reservation_hold_minutes} phút để hoàn tất thanh toán.</span></p>
           </div>
           <Link to="/tables" className="mt-5 inline-flex items-center rounded-full bg-basil-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-basil-700">
             Xem sơ đồ và đặt bàn

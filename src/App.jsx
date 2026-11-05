@@ -19,7 +19,7 @@ import PendingDepositsPage from './pages/PendingDepositsPage';
 import PendingRefundsPage from './pages/PendingRefundsPage';
 import PendingPreordersPage from './pages/PendingPreordersPage';
 import BankSettingsPage from './pages/BankSettingsPage';
-import TableTransferSettingsPage from './pages/TableTransferSettingsPage';
+import ReservationTimingSettingsPage from './pages/ReservationTimingSettingsPage';
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
 import FinancePage from './pages/FinancePage';
@@ -28,6 +28,7 @@ import IngredientsPage from './pages/IngredientsPage';
 import RestaurantReviewsPage from './pages/RestaurantReviewsPage';
 import ManagerReviewsPage from './pages/ManagerReviewsPage';
 import PublicHomePage from './pages/PublicHomePage';
+import ChatPage from './pages/ChatPage';
 
 // Người chưa đăng nhập xem trang giới thiệu; nhân viên đã đăng nhập vào đúng màn hình vận hành.
 function HomeRedirect() {
@@ -116,6 +117,15 @@ export default function App() {
           />
 
           <Route
+            path="/chat"
+            element={
+              <ProtectedRoute allowedRoles={['customer', 'thu_ngan']}>
+                <ChatPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/tables"
             element={<TablesRoute />}
           />
@@ -180,12 +190,17 @@ export default function App() {
           />
 
           <Route
-            path="/table-transfer-settings"
+            path="/reservation-timing"
             element={
               <ProtectedRoute allowedRoles={['manager']}>
-                <TableTransferSettingsPage />
+                <ReservationTimingSettingsPage />
               </ProtectedRoute>
             }
+          />
+
+          <Route
+            path="/table-transfer-settings"
+            element={<Navigate to="/reservation-timing" replace />}
           />
 
           <Route

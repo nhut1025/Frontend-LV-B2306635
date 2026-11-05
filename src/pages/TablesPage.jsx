@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { tablesApi } from '../api/tables';
 import { billsApi } from '../api/bills';
 import { reservationsApi } from '../api/reservations';
+import { settingsApi } from '../api/settings';
 import { createSocket } from '../api/socket';
 import { getErrorMessage } from '../api/client';
 
@@ -33,6 +34,10 @@ export default function TablesPage() {
   const [tables, setTables] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [recoverableReservations, setRecoverableReservations] = useState([]);
+  const [reservationRules, setReservationRules] = useState({
+    no_show_buffer_minutes: 15,
+    reservation_restore_minutes: 30,
+  });
   const [confirmedArrivalIds, setConfirmedArrivalIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
@@ -96,6 +101,19 @@ export default function TablesPage() {
   useEffect(() => {
     loadTables();
     loadUpcoming();
+  }, [canOperateTables]);
+
+  useEffect(() => {
+    if (!canOperateTables) return undefined;
+    let active = true;
+    settingsApi.getReservationRules()
+      .then((response) => {
+        if (active) setReservationRules(response.data);
+      })
+      .catch((requestError) => {
+        if (active) setError(getErrorMessage(requestError));
+      });
+    return () => { active = false; };
   }, [canOperateTables]);
 
   useEffect(() => {
@@ -164,7 +182,7 @@ export default function TablesPage() {
 
   async function handleReservationAction(reservationId, action, refundAccount = {}) {
     if (action === 'cancel' && !Object.keys(refundAccount).length
-      && !confirm('Khách đã trễ ít nhất 15 phút. Hủy sẽ ghi nhận mất cọc; nếu khách đến, có thể khôi phục trong 30 phút sau khi hủy (nếu bàn còn trống). Tiếp tục?')) return;
+      && !confirm(`Khách đã trễ ít nhất ${reservationRules.no_show_buffer_minutes} phút. Hủy sẽ ghi nhận mất cọc; nếu khách đến, có thể khôi phục trong ${reservationRules.reservation_restore_minutes} phút sau khi hủy (nếu bàn còn trống). Tiếp tục?`)) return;
     const cancellationData = action === 'cancel' && !Object.keys(refundAccount).length
       ? { accept_forfeiture: true }
       : refundAccount;
@@ -386,7 +404,7 @@ export default function TablesPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="font-display text-xl font-semibold text-ink">Đặt bàn sắp tới</h2>
-              <p className="text-sm text-slate-500">Chỉ hủy khi khách đã trễ ít nhất 15 phút</p>
+              <p className="text-sm text-slate-500">Chỉ hủy khi khách đã trễ ít nhất {reservationRules.no_show_buffer_minutes} phút</p>
             </div>
             <button
               type="button"
@@ -410,7 +428,7 @@ export default function TablesPage() {
                   <div>
                     {Number(reservation.late_cancel_eligible) > 0 && (
                       <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-                        Khách đã trễ quá 15 phút. Nhân viên có thể chủ động hủy; tiền cọc sẽ bị mất.
+                        Khách đã trễ quá {reservationRules.no_show_buffer_minutes} phút. Nhân viên có thể chủ động hủy; tiền cọc sẽ bị mất.
                       </div>
                     )}
                     <p className="flex items-center gap-2 font-medium text-ink">
@@ -474,7 +492,7 @@ export default function TablesPage() {
                             Bàn {reservation.table_numbers || '—'} · Hủy lúc {reservation.cancelled_at}
                           </p>
                           <p className="mt-1 text-sm font-medium text-amber-800">
-                            Cọc {Number(reservation.deposit_amount || 0).toLocaleString('vi-VN')}đ đang ghi nhận mất; có thể khôi phục trong 30 phút nếu còn bàn phù hợp.
+                            Cọc {Number(reservation.deposit_amount || 0).toLocaleString('vi-VN')}đ đang ghi nhận mất; có thể khôi phục trong {reservationRules.reservation_restore_minutes} phút nếu còn bàn phù hợp.
                           </p>
                         </div>
                         <button

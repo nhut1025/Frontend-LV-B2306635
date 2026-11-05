@@ -13,6 +13,12 @@ const RATING_FILTERS = [
   { value: '2', label: '1–2 sao' },
 ];
 
+const REPLY_FILTERS = [
+  { value: 'all', label: 'Mọi trạng thái' },
+  { value: 'unreplied', label: 'Chưa phản hồi' },
+  { value: 'replied', label: 'Đã phản hồi' },
+];
+
 const CATEGORY_LABELS = [
   { key: 'food_rating', label: 'Món ăn' },
   { key: 'service_rating', label: 'Phục vụ' },
@@ -37,6 +43,7 @@ function RatingStars({ rating }) {
 
 export default function ManagerReviewsPage() {
   const [ratingFilter, setRatingFilter] = useState('all');
+  const [replyFilter, setReplyFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [drafts, setDrafts] = useState({});
@@ -52,7 +59,11 @@ export default function ManagerReviewsPage() {
       setLoading(true);
       setError('');
       try {
-        const response = await billsApi.listRestaurantReviews({ rating: ratingFilter, page });
+        const response = await billsApi.listRestaurantReviews({
+          rating: ratingFilter,
+          reply_status: replyFilter,
+          page,
+        });
         if (active) {
           setData(response.data);
           setDrafts((current) => {
@@ -71,7 +82,7 @@ export default function ManagerReviewsPage() {
     }
     loadReviews();
     return () => { active = false; };
-  }, [ratingFilter, page]);
+  }, [ratingFilter, replyFilter, page]);
 
   async function saveReply(reviewId) {
     setSavingId(reviewId);
@@ -135,6 +146,27 @@ export default function ManagerReviewsPage() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Lọc trạng thái phản hồi">
+          <span className="text-sm font-medium text-slate-600">Trạng thái phản hồi:</span>
+          {REPLY_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              aria-pressed={replyFilter === filter.value}
+              onClick={() => {
+                setPage(1);
+                setReplyFilter(filter.value);
+              }}
+              className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                replyFilter === filter.value
+                  ? 'border-basil-600 bg-basil-600 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-basil-300'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
         </div>
 
         {loading && (
