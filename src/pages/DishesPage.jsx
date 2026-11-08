@@ -30,6 +30,18 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+function tokenizeSearchText(value) {
+  return String(value ?? '')
+    .toLocaleLowerCase('vi')
+    .normalize('NFC')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+function hasVietnameseDiacritics(value) {
+  return value.includes('đ') || /\p{M}/u.test(value.normalize('NFD'));
+}
+
 function isAvailable(dish) {
   return dish.is_available === true || Number(dish.is_available) === 1;
 }
@@ -71,6 +83,7 @@ export default function DishesPage() {
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageUrlDraft, setImageUrlDraft] = useState('');
+  const [dishFormError, setDishFormError] = useState('');
 
   const [ingredientSearch, setIngredientSearch] = useState('');
   const groupedDishes = useMemo(() => {
@@ -88,12 +101,16 @@ export default function DishesPage() {
     : groupedDishes.find((group) => group.id === String(categoryId));
   const visibleDishes = categoryId ? selectedGroup?.dishes || [] : dishes;
   const filteredDishes = useMemo(() => {
-    const queryTerms = normalizeSearchText(searchTerm).split(' ').filter(Boolean);
+    const queryTerms = tokenizeSearchText(searchTerm);
     return visibleDishes
       .filter((dish) => {
         if (queryTerms.length === 0) return true;
-        const searchableText = normalizeSearchText(`${dish.name} ${dish.category} ${dish.description}`);
-        return queryTerms.every((term) => searchableText.includes(term));
+        const nameTerms = tokenizeSearchText(dish.name);
+        return queryTerms.every((term) => nameTerms.some((nameTerm) => (
+          hasVietnameseDiacritics(term)
+            ? term === nameTerm
+            : normalizeSearchText(term) === normalizeSearchText(nameTerm)
+        )));
       })
       .filter((dish) => !availableOnly || isAvailable(dish))
       .slice()
@@ -160,6 +177,7 @@ export default function DishesPage() {
   function openCreateModal() {
     setEditingDish(null);
     setImageUrlDraft('');
+    setDishFormError('');
     setForm({
       ...emptyForm,
       category_id: categories.some((category) => String(category.id) === String(categoryId))
@@ -173,6 +191,7 @@ export default function DishesPage() {
     if (loadingDishId !== null) return;
     setLoadingDishId(dish.id);
     setError('');
+    setDishFormError('');
     try {
       const response = await dishesApi.getById(dish.id);
       const fullDish = response.data?.dish;
@@ -182,7 +201,7 @@ export default function DishesPage() {
       setForm({
         name: fullDish.name,
         description: fullDish.description || '',
-        price: formatPrice(fullDish.price),
+        price: formatPrice(Math.trunc(Number(fullDish.price))),
         category_id: String(
           fullDish.category_id ||
           categories.find((category) => category.name === fullDish.category)?.id ||
@@ -215,20 +234,20 @@ export default function DishesPage() {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     if (form.image_urls.length + files.length > 10) {
-      setError('Mỗi món chỉ được có tối đa 10 hình ảnh.');
+      setDishFormError('Mỗi món chỉ được có tối đa 10 hình ảnh.');
       e.target.value = '';
       return;
     }
     const invalidFile = files.find((file) => !file.type.startsWith('image/') || file.size > 20 * 1024 * 1024);
     if (invalidFile) {
-      setError(!invalidFile.type.startsWith('image/')
+      setDishFormError(!invalidFile.type.startsWith('image/')
         ? 'Vui lòng chọn file hình ảnh hợp lệ.'
         : `Ảnh "${invalidFile.name}" vượt quá giới hạn 20 MB.`);
       e.target.value = '';
       return;
     }
 
-    setError('');
+    setDishFormError('');
     setUploadingImage(true);
     try {
       for (const file of files) {
@@ -241,7 +260,7 @@ export default function DishesPage() {
         }));
       }
     } catch (err) {
-      setError(getErrorMessage(err));
+      setDishFormError(getErrorMessage(err));
     } finally {
       setUploadingImage(false);
       e.target.value = '';
@@ -253,17 +272,17 @@ export default function DishesPage() {
     const url = imageUrlDraft.trim();
     if (!url) return;
     if (form.image_urls.length >= 10) {
-      setError('Mỗi món chỉ được có tối đa 10 hình ảnh.');
+      setDishFormError('Mỗi món chỉ được có tối đa 10 hình ảnh.');
       return;
     }
     try {
       const parsedUrl = new URL(url);
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('Unsupported URL protocol');
     } catch {
-      setError('URL hình ảnh không hợp lệ.');
+      setDishFormError('URL hình ảnh không hợp lệ.');
       return;
     }
-    setError('');
+    setDishFormError('');
     setForm((current) => ({
       ...current,
       image_urls: current.image_urls.includes(url) ? current.image_urls : [...current.image_urls, url],
@@ -279,7 +298,7 @@ export default function DishesPage() {
     e.preventDefault();
     if (uploadingImage) return;
     setSaving(true);
-    setError('');
+    setDishFormError('');
     try {
       const payload = {
         ...form,
@@ -295,7 +314,7 @@ export default function DishesPage() {
       setShowDishModal(false);
       await loadAll();
     } catch (err) {
-      setError(getErrorMessage(err));
+      setDishFormError(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -560,6 +579,7 @@ export default function DishesPage() {
       {showDishModal && (
         <Modal title={editingDish ? 'Sửa món ăn' : 'Thêm món ăn'} onClose={() => setShowDishModal(false)}>
           <form onSubmit={handleSaveDish} className="space-y-4">
+            {dishFormError && <Alert type="error">{dishFormError}</Alert>}
             <div>
               <label className="field-label">Tên món</label>
               <input

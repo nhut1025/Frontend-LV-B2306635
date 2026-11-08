@@ -58,7 +58,7 @@ function FinanceBillDetail({ billId, onClose }) {
   const bill = data?.bill;
 
   return (
-    <Modal title={`Chi tiết bill #${billId}`} onClose={onClose} widthClass="max-w-2xl">
+    <Modal title="Chi tiết bill" onClose={onClose} widthClass="max-w-2xl">
       {loading ? (
         <div className="flex justify-center py-10">
           <Loader2 className="animate-spin text-slate-400" size={22} />
@@ -360,7 +360,7 @@ export default function FinancePage() {
         <table className="w-full min-w-[1000px] text-sm">
           <thead className="bg-slate-50 text-left text-xs font-medium text-slate-500">
             <tr>
-              <th className="px-4 py-3">Bill / thời gian</th>
+              <th className="px-4 py-3">Thời gian</th>
               <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3">Bàn</th>
               <th className="px-4 py-3 text-right">Tổng bill</th>
@@ -380,8 +380,7 @@ export default function FinancePage() {
               bills.map((bill) => (
                 <tr key={bill.bill_id} className="border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-4 py-3">
-                    <span className="font-medium text-ink">#{bill.bill_id}</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">{formatDateTime(bill.paid_at)}</span>
+                    <span className="font-medium text-ink">{formatDateTime(bill.paid_at)}</span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {bill.status === 'da_thanh_toan' && !bill.payment_method
@@ -399,7 +398,7 @@ export default function FinancePage() {
                       type="button"
                       onClick={() => setSelectedBillId(bill.bill_id)}
                       className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-ink"
-                      aria-label={`Xem chi tiết bill ${bill.bill_id}`}
+                      aria-label="Xem chi tiết bill"
                       title="Xem chi tiết"
                     >
                       <Receipt size={16} />
