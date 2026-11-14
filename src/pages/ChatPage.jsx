@@ -528,7 +528,7 @@ export default function ChatPage() {
                   {isCashier ? 'Các hội thoại mới sẽ xuất hiện tự động trong hộp thư.' : 'Gửi câu hỏi cho quán, chúng tôi sẽ phản hồi sớm nhất có thể.'}
                 </p>
                 {!isCashier && cashiersOnline === false && (
-                  <p className="mt-2 text-xs text-amber-700">Hiện chưa có thu ngân trực tuyến, quán sẽ trả lời bạn sớm.</p>
+                  <p className="mt-2 text-xs text-amber-700">Hiện chưa có nhân viên trực tuyến, quán sẽ trả lời bạn sớm nhất có thể ạ.</p>
                 )}
                 {!isCashier && (
                   <form ref={formRef} onSubmit={sendMessage} className="mt-5 flex w-full max-w-lg items-end gap-2">

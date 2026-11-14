@@ -163,6 +163,11 @@ function PaymentModal({ billId, onClose, onPaid }) {
                     {money(item.unit_price)} · {ITEM_STATUS_LABEL[item.status] || item.status}
                     {item.note ? ` · ${item.note}` : ''}
                   </p>
+                  {item.accepted_by_name && (
+                    <p className="text-xs text-slate-500">
+                      Người nhận món: {item.accepted_by_name}
+                    </p>
+                  )}
                 </div>
                 <span className="shrink-0 font-medium text-ink">{money(Number(item.unit_price) * item.quantity)}</span>
               </div>

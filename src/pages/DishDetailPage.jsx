@@ -122,6 +122,9 @@ export default function DishDetailPage() {
                   {dish.ingredients.map((ingredient) => (
                     <li key={ingredient.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
                       {ingredient.name}
+                      {ingredient.quantity_g != null && (
+                        <> · {Number(ingredient.quantity_g).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} g</>
+                      )}
                     </li>
                   ))}
                 </ul>

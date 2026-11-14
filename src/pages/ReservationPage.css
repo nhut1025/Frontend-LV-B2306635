@@ -64,9 +64,10 @@
 .reservation-history-link:hover { border-color: #b7d1bf; background: #f5faf6; }
 
 .reservation-layout {
+  --reservation-panel-width: max(310px, 31%);
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(310px, 31%);
+  grid-template-columns: minmax(0, 1fr) var(--reservation-panel-width);
   align-items: start;
   gap: 17px;
 }
@@ -424,6 +425,18 @@
 .reservation-panel-foot svg { flex: 0 0 auto; color: #78957c; }
 .reservation-layout.panel-hidden { grid-template-columns: minmax(0, 1fr); }
 
+@media (min-width: 1001px) {
+  .reservation-layout:not(.panel-hidden) .reservation-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--reservation-panel-width);
+    max-height: 100%;
+    overflow-y: auto;
+  }
+}
+
 .reservation-hold-content { display: grid; gap: 13px; padding: 16px 17px; }
 .reservation-hold-summary { display: grid; gap: 6px; padding: 11px; border: 1px solid #e6ebe4; border-radius: 9px; background: #f9fbf8; color: #748077; font-size: 9px; }
 .reservation-hold-summary span:first-child { display: flex; justify-content: space-between; color: #879187; font-size: 8px; letter-spacing: .08em; }
@@ -449,13 +462,14 @@
 .reservation-reset-link { border: 0; background: transparent; color: #55785c; cursor: pointer; font-size: 9px; }
 
 @media (max-width: 1120px) {
-  .reservation-layout { grid-template-columns: minmax(0, 1fr) minmax(290px, 35%); gap: 12px; }
+  .reservation-layout { --reservation-panel-width: max(290px, 35%); }
+  .reservation-layout { gap: 12px; }
   .reservation-map-legend { gap: 9px; padding-right: 10px; padding-left: 10px; }
   .reservation-map-legend .map-tip { width: 100%; margin-left: 0; }
 }
 
 @media (max-width: 850px) {
-  .reservation-layout { grid-template-columns: minmax(0, 1fr) minmax(270px, 38%); }
+  .reservation-layout { --reservation-panel-width: max(270px, 38%); }
   .reservation-map-heading { padding-right: 11px; padding-left: 11px; }
   .reservation-map-live { font-size: 0; }
   .reservation-map-live i { width: 8px; height: 8px; }

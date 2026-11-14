@@ -8,4 +8,6 @@ export const usersApi = {
   getReservationSummary: () => client.get('/users/me/reservation-summary'),
   getExcludedIngredients: () => client.get('/users/me/excluded-ingredients'),
   setExcludedIngredients: (ingredient_ids) => client.put('/users/me/excluded-ingredients', { ingredient_ids }),
+  getPreferredIngredients: () => client.get('/users/me/preferred-ingredients'),
+  setPreferredIngredients: (ingredient_ids) => client.put('/users/me/preferred-ingredients', { ingredient_ids }),
 };

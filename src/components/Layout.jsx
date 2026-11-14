@@ -1,7 +1,7 @@
 // src/components/Layout.jsx
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf, Star, MessageSquareText, X, Clock3, CalendarClock, MessageCircle } from 'lucide-react';
+import { UtensilsCrossed, Grid3x3, LogOut, ChefHat, UserRound, Users2, Receipt, Landmark, Flame, Banknote, PhoneCall, Tags, Leaf, Star, MessageSquareText, X, Clock3, CalendarClock, MessageCircle, TrendingUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
@@ -27,11 +27,12 @@ const navItems = [
   { to: '/pending-preorders', label: 'Món đặt trước', icon: PhoneCall, roles: ['thu_ngan'], badge: 'preorders' },
   { to: '/payments', label: 'Thanh toán bill', icon: Banknote, roles: ['thu_ngan'], badge: 'bills' },
   { to: '/finance', label: 'Thu chi', icon: Banknote, roles: ['manager'] },
+  { to: '/top-selling-dishes', label: 'Món bán chạy', icon: TrendingUp, roles: ['manager'] },
   { to: '/bank-settings', label: 'Tài khoản nhận cọc', icon: Landmark, roles: ['manager'] },
   { to: '/reservation-timing', label: 'Thời gian đặt bàn', icon: Clock3, roles: ['manager'] },
 ];
 
-export default function Layout({ children }) {
+export default function Layout({ children, flushTop = false }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ deposits: 0, preorders: 0, bills: 0, refunds: 0, chat: 0 });
@@ -191,7 +192,13 @@ export default function Layout({ children }) {
         </div>
       </aside>
 
-      <main className="h-screen min-w-0 flex-1 overflow-y-auto px-3 py-4 md:px-8 md:py-8">{children}</main>
+      <main
+        className={`h-screen min-w-0 flex-1 overflow-y-auto px-3 pb-4 md:px-8 md:pb-8 ${
+          flushTop ? 'pt-0 md:pt-0' : 'pt-4 md:pt-8'
+        }`}
+      >
+        {children}
+      </main>
       {refundNotice && (
         <div className="fixed right-4 top-4 z-50 flex max-w-md items-center gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-ink shadow-lg">
           <span>{refundNotice}</span>

@@ -117,6 +117,9 @@ export default function ReadyItemsPanel() {
                 <p className="truncate text-sm font-medium text-ink">
                   Bàn {item.table_number} · {item.quantity}× {item.dish_name}
                 </p>
+                {item.accepted_by_name && (
+                  <p className="text-xs text-slate-500">Người nhận món: {item.accepted_by_name}</p>
+                )}
                 {item.note && <p className="truncate text-xs text-slate-500">Ghi chú: {item.note}</p>}
               </div>
               <button

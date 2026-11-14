@@ -341,6 +341,11 @@ export default function MyReservationsPage() {
                                       <td className="px-3 py-2 text-ink">
                                         <span className="font-medium">{item.dish_name || `Món #${item.dish_id}`}</span>
                                         {item.note && <span className="mt-0.5 block text-slate-500">{item.note}</span>}
+                                        {item.accepted_by_name && (
+                                          <span className="mt-0.5 block text-slate-500">
+                                            Người nhận món: {item.accepted_by_name}
+                                          </span>
+                                        )}
                                         {item.review_sentiment && (
                                           <span className="mt-0.5 block text-slate-500">
                                             Bạn đã {item.review_sentiment === 'like' ? 'thích' : 'không thích'} món này

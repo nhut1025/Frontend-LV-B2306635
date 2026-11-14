@@ -936,7 +936,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
 
                   {showDishMenu && (
                     <div className="preorder-menu">
-                      <p className="preorder-disclaimer">Món đặt trước chưa được tính vào bill hoặc gửi xuống bếp. Thu ngân sẽ gọi bạn xác nhận.</p>
+                      <p className="preorder-disclaimer">Món đặt trước cần thời gian chuẩn bị. Thu ngân sẽ gọi bạn xác nhận trước giờ đặt bàn để chuẩn bị món ăn.</p>
                       {dishesLoading ? (
                         <div className="preorder-loading"><Loader2 size={17} className="animate-spin" />Đang tải thực đơn...</div>
                       ) : dishesError ? (

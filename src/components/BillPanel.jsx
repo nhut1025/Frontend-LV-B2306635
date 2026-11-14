@@ -126,6 +126,11 @@ export default function BillPanel({ tableId, canEdit = true }) {
                   {Number(item.unit_price).toLocaleString('vi-VN')}đ · {ITEM_STATUS_LABEL[item.status] || item.status}
                   {item.note && ` · ${item.note}`}
                 </p>
+                {item.accepted_by_name && (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Người nhận món: {item.accepted_by_name}
+                  </p>
+                )}
               </div>
               {canEdit && !paymentRequested && item.status === 'cho_xac_nhan' && (
                 <button

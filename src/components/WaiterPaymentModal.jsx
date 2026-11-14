@@ -66,6 +66,11 @@ export default function WaiterPaymentModal({ table, bill, items, onClose }) {
                 <p className="text-xs text-slate-500">
                   {money(item.unit_price)} · {item.status === 'da_phuc_vu' ? 'Đã phục vụ' : 'Chưa phục vụ'}
                 </p>
+                {item.accepted_by_name && (
+                  <p className="text-xs text-slate-500">
+                    Người nhận món: {item.accepted_by_name}
+                  </p>
+                )}
               </div>
               <span className="shrink-0 font-medium text-ink">{money(Number(item.unit_price) * item.quantity)}</span>
             </div>

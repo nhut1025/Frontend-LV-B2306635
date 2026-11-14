@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Camera, LockKeyhole, UserRound } from 'lucide-react';
+import { Ban, CalendarDays, Camera, Heart, LockKeyhole, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Alert from '../components/Alert';
@@ -25,13 +25,23 @@ function formatDate(value, withTime = false) {
     : { dateStyle: 'medium' }).format(date);
 }
 
+function normalizeIngredientName(value) {
+  return value
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+}
+
 export default function ProfilePage() {
   const { updateUser } = useAuth();
   const [form, setForm] = useState({ full_name: '', phone: '' });
   const [profile, setProfile] = useState(null);
   const [viewingAvatar, setViewingAvatar] = useState(false);
   const [ingredients, setIngredients] = useState([]);
-  const [excludedIds, setExcludedIds] = useState([]);
+  const [ingredientStates, setIngredientStates] = useState({});
+  const [savedIngredientStates, setSavedIngredientStates] = useState({});
+  const [ingredientSearch, setIngredientSearch] = useState('');
   const [reservationSummary, setReservationSummary] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [passwordForm, setPasswordForm] = useState({
@@ -56,13 +66,32 @@ export default function ProfilePage() {
         updateUser({ full_name: user.full_name, avatar_url: user.avatar_url });
 
         if (user.role === 'customer') {
-          const [ingredientsRes, excludedRes, summaryRes] = await Promise.all([
+          const [ingredientsRes, excludedRes, preferredRes, summaryRes] = await Promise.all([
             ingredientsApi.list(),
             usersApi.getExcludedIngredients(),
+            usersApi.getPreferredIngredients(),
             usersApi.getReservationSummary(),
           ]);
-          setIngredients(ingredientsRes.data.ingredients);
-          setExcludedIds(excludedRes.data.excluded_ingredients.map((ingredient) => ingredient.id));
+          const loadedIngredients = ingredientsRes.data.ingredients;
+          const excludedIds = new Set(
+            excludedRes.data.excluded_ingredients.map((ingredient) => ingredient.id)
+          );
+          const preferredIds = new Set(
+            preferredRes.data.preferred_ingredients.map((ingredient) => ingredient.id)
+          );
+          const loadedStates = Object.fromEntries(
+            loadedIngredients.map((ingredient) => [
+              ingredient.id,
+              excludedIds.has(ingredient.id)
+                ? 'excluded'
+                : preferredIds.has(ingredient.id)
+                  ? 'preferred'
+                  : 'none',
+            ])
+          );
+          setIngredients(loadedIngredients);
+          setIngredientStates(loadedStates);
+          setSavedIngredientStates(loadedStates);
           setReservationSummary(summaryRes.data.summary);
         }
       } catch (err) {
@@ -74,10 +103,16 @@ export default function ProfilePage() {
     loadProfile();
   }, []);
 
-  function toggleExcluded(id) {
-    setExcludedIds((current) => current.includes(id)
-      ? current.filter((ingredientId) => ingredientId !== id)
-      : [...current, id]);
+  function toggleIngredientState(id) {
+    setIngredientStates((current) => {
+      const currentState = current[id] || 'none';
+      const nextState = currentState === 'none'
+        ? 'preferred'
+        : currentState === 'preferred'
+          ? 'excluded'
+          : 'none';
+      return { ...current, [id]: nextState };
+    });
   }
 
   async function handleSubmit(e) {
@@ -97,14 +132,23 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleExcludedIngredientsSubmit(e) {
+  async function handleIngredientPreferencesSubmit(e) {
     e.preventDefault();
     setSaving(true);
     setError('');
     setMessage('');
+    const statesToSave = { ...ingredientStates };
+    const preferredIds = ingredients
+      .filter((ingredient) => statesToSave[ingredient.id] === 'preferred')
+      .map((ingredient) => ingredient.id);
+    const excludedIds = ingredients
+      .filter((ingredient) => statesToSave[ingredient.id] === 'excluded')
+      .map((ingredient) => ingredient.id);
     try {
+      await usersApi.setPreferredIngredients(preferredIds);
       await usersApi.setExcludedIngredients(excludedIds);
-      setMessage('Đã cập nhật danh sách nguyên liệu không dùng.');
+      setSavedIngredientStates(statesToSave);
+      setMessage('Đã cập nhật sở thích ăn uống.');
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -160,6 +204,20 @@ export default function ProfilePage() {
       setChangingPassword(false);
     }
   }
+
+  const normalizedIngredientSearch = normalizeIngredientName(ingredientSearch.trim());
+  const filteredIngredients = ingredients.filter((ingredient) =>
+    normalizeIngredientName(ingredient.name).includes(normalizedIngredientSearch)
+  );
+  const preferredCount = ingredients.filter(
+    (ingredient) => ingredientStates[ingredient.id] === 'preferred'
+  ).length;
+  const excludedCount = ingredients.filter(
+    (ingredient) => ingredientStates[ingredient.id] === 'excluded'
+  ).length;
+  const hasIngredientChanges = ingredients.some(
+    (ingredient) => ingredientStates[ingredient.id] !== savedIngredientStates[ingredient.id]
+  );
 
   return (
     <Layout>
@@ -248,6 +306,93 @@ export default function ProfilePage() {
             </button>
           </form>
 
+          {profile?.role === 'customer' && (
+            <section className="card space-y-4">
+              <div>
+                <h2 className="font-display text-base font-semibold text-ink">Sở thích ăn uống</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Chọn trạng thái cho nguyên liệu để cá nhân hóa gợi ý món ăn.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <div className="rounded-lg bg-basil-50 px-3 py-2 text-basil-800">
+                  ❤️ Thích: ưu tiên gợi ý
+                </div>
+                <div className="rounded-lg bg-rose-50 px-3 py-2 text-rose-700">
+                  🚫 Không ăn: món chứa nguyên liệu này sẽ không được gợi ý
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600">
+                  Bấm vào nguyên liệu để đổi trạng thái
+                </div>
+              </div>
+              <form onSubmit={handleIngredientPreferencesSubmit} className="space-y-4">
+                <div>
+                  <label className="field-label" htmlFor="ingredient_search">Tìm nguyên liệu</label>
+                  <input
+                    id="ingredient_search"
+                    type="search"
+                    value={ingredientSearch}
+                    onChange={(e) => setIngredientSearch(e.target.value)}
+                    placeholder="Nhập tên nguyên liệu"
+                    className="field-input"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {filteredIngredients.map((ingredient) => {
+                    const state = ingredientStates[ingredient.id] || 'none';
+                    const stateLabel = state === 'preferred'
+                      ? 'Thích'
+                      : state === 'excluded'
+                        ? 'Không ăn'
+                        : 'Chưa chọn';
+                    const stateClass = state === 'preferred'
+                      ? 'border-basil-200 bg-basil-50 text-basil-800 hover:bg-basil-100'
+                      : state === 'excluded'
+                        ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100';
+                    const statusDescription = `${ingredient.name}, trạng thái hiện tại: ${stateLabel}. Bấm để đổi trạng thái.`;
+
+                    return (
+                      <button
+                        key={ingredient.id}
+                        type="button"
+                        onClick={() => toggleIngredientState(ingredient.id)}
+                        aria-label={statusDescription}
+                        title={statusDescription}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-basil-500 focus-visible:ring-offset-2 ${stateClass}`}
+                      >
+                        {state === 'preferred' && <Heart size={14} aria-hidden="true" />}
+                        {state === 'excluded' && <Ban size={14} aria-hidden="true" />}
+                        <span className={state === 'excluded' ? 'line-through' : ''}>
+                          {ingredient.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {filteredIngredients.length === 0 && (
+                    <p className="text-sm text-slate-500">
+                      {ingredients.length === 0
+                        ? 'Chưa có nguyên liệu nào.'
+                        : 'Không tìm thấy nguyên liệu phù hợp.'}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-slate-600">
+                    {preferredCount} thích, {excludedCount} không ăn
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={saving || !hasIngredientChanges}
+                    className="btn-primary"
+                  >
+                    {saving ? 'Đang lưu...' : 'Lưu sở thích ăn uống'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
+
           <section className="card space-y-4">
             <h2 className="font-display text-base font-semibold text-ink">Thông tin tài khoản</h2>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -302,31 +447,6 @@ export default function ProfilePage() {
                   </dd>
                 </div>
               </dl>
-            </section>
-          )}
-
-          {profile?.role === 'customer' && (
-            <section className="card">
-              <h2 className="font-display text-base font-semibold text-ink">Nguyên liệu không dùng</h2>
-              <p className="mt-1 text-sm text-slate-500">Các món chứa nguyên liệu bạn muốn tránh sẽ được đánh dấu cảnh báo.</p>
-              <form onSubmit={handleExcludedIngredientsSubmit}>
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {ingredients.map((ingredient) => (
-                    <label key={ingredient.id} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink hover:bg-slate-50">
-                      <input
-                        type="checkbox"
-                        checked={excludedIds.includes(ingredient.id)}
-                        onChange={() => toggleExcluded(ingredient.id)}
-                        className="h-4 w-4 rounded border-slate-300 text-basil-500 focus:ring-basil-500"
-                      />
-                      {ingredient.name}
-                    </label>
-                  ))}
-                </div>
-                <button type="submit" disabled={saving} className="btn-primary mt-4">
-                  {saving ? 'Đang lưu...' : 'Lưu nguyên liệu không dùng'}
-                </button>
-              </form>
             </section>
           )}
 

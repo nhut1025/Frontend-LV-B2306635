@@ -23,6 +23,7 @@ import ReservationTimingSettingsPage from './pages/ReservationTimingSettingsPage
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
 import FinancePage from './pages/FinancePage';
+import TopSellingDishesPage from './pages/TopSellingDishesPage';
 import CategoriesPage from './pages/CategoriesPage';
 import IngredientsPage from './pages/IngredientsPage';
 import RestaurantReviewsPage from './pages/RestaurantReviewsPage';
@@ -217,6 +218,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['manager']}>
                 <FinancePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/top-selling-dishes"
+            element={
+              <ProtectedRoute allowedRoles={['manager']}>
+                <TopSellingDishesPage />
               </ProtectedRoute>
             }
           />

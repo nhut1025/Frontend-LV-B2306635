@@ -45,6 +45,9 @@ function KitchenCard({ item, now, busy, onAdvance, onOutOfStock }) {
       {item.note && (
         <p className="rounded-xl bg-clay-50 px-3 py-2 text-sm text-clay-600">Ghi chú: {item.note}</p>
       )}
+      {item.accepted_by_name && (
+        <p className="text-sm text-slate-600">Người nhận món: {item.accepted_by_name}</p>
+      )}
 
       <div className="flex gap-2">
         <button type="button" onClick={() => onAdvance(item)} disabled={busy} className="btn-primary flex-1">
@@ -129,8 +132,8 @@ export default function KitchenPage() {
     setError('');
     setNotice('');
     try {
-      const res = await billsApi.advanceItem(item.id);
-      applyItem({ ...item, status: res.data.status });
+      const res = await billsApi.advanceItem(item.id, item.status);
+      applyItem(res.data.item || { ...item, status: res.data.status });
     } catch (err) {
       setError(getErrorMessage(err));
       loadQueue(); // trạng thái có thể đã đổi do người khác thao tác -> đồng bộ lại

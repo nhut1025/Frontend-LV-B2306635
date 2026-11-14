@@ -13,7 +13,8 @@ export const billsApi = {
   // Phase 6: Kitchen Display System
   kitchenQueue: () => client.get('/bills/kitchen-queue'),
   readyItems: () => client.get('/bills/ready-items'),
-  advanceItem: (itemId) => client.patch(`/bills/items/${itemId}/advance`),
+  advanceItem: (itemId, expectedStatus) =>
+    client.patch(`/bills/items/${itemId}/advance`, { expected_status: expectedStatus }),
   serveItem: (itemId) => client.patch(`/bills/items/${itemId}/serve`),
 
     // Phase 7: thanh toán bill cuối (thu_ngan)

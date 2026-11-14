@@ -12,8 +12,9 @@ import { categoriesApi } from '../api/categories';
 import { reservationsApi } from '../api/reservations';
 import { settingsApi } from '../api/settings';
 import { getErrorMessage } from '../api/client';
+import DishRecommendations from '../components/DishRecommendations';
 
-const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredient_ids: [] };
+const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredients: [] };
 
 function formatPrice(value) {
   const digits = String(value ?? '').replace(/\D/g, '');
@@ -55,7 +56,7 @@ function reservationDateTime(reservation) {
 
 export default function DishesPage() {
   const { categoryId } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const isManager = user?.role === 'manager';
   const canToggleAvailability = ['manager', 'phuc_vu', 'kitchen'].includes(user?.role);
   const isCustomerFacing = !user || user.role === 'customer';
@@ -210,7 +211,10 @@ export default function DishesPage() {
         image_urls: fullDish.images?.length
           ? fullDish.images
           : (fullDish.image_url ? [fullDish.image_url] : []),
-        ingredient_ids: (fullDish.ingredients || []).map((ingredient) => ingredient.id),
+        ingredients: (fullDish.ingredients || []).map((ingredient) => ({
+          ingredient_id: Number(ingredient.id),
+          quantity_g: ingredient.quantity_g == null ? '' : String(ingredient.quantity_g),
+        })),
       });
       setImageUrlDraft('');
       setShowDishModal(true);
@@ -224,9 +228,18 @@ export default function DishesPage() {
   function toggleIngredientInForm(id) {
     setForm((f) => ({
       ...f,
-      ingredient_ids: f.ingredient_ids.includes(id)
-        ? f.ingredient_ids.filter((x) => x !== id)
-        : [...f.ingredient_ids, id],
+      ingredients: f.ingredients.some((item) => item.ingredient_id === Number(id))
+        ? f.ingredients.filter((item) => item.ingredient_id !== Number(id))
+        : [...f.ingredients, { ingredient_id: Number(id), quantity_g: '' }],
+    }));
+  }
+
+  function updateIngredientQuantity(id, quantity) {
+    setForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.map((item) => (
+        item.ingredient_id === Number(id) ? { ...item, quantity_g: quantity } : item
+      )),
     }));
   }
 
@@ -305,6 +318,12 @@ export default function DishesPage() {
         category_id: Number(form.category_id),
         image_url: form.image_urls[0] || '',
         price: Number(form.price.replace(/\D/g, '')),
+        ingredients: form.ingredients.map((ingredient) => ({
+          ingredient_id: ingredient.ingredient_id,
+          quantity_g: String(ingredient.quantity_g ?? '').trim() === ''
+            ? null
+            : Number(ingredient.quantity_g),
+        })),
       };
       if (editingDish) {
         await dishesApi.update(editingDish.id, payload);
@@ -341,8 +360,68 @@ export default function DishesPage() {
   }
 
   return (
-    <Layout>
+    <Layout flushTop>
       <div className="mx-auto max-w-6xl space-y-7 pb-8">
+      <div className="sticky top-0 z-30 -mx-3 space-y-3 border-b border-slate-300 bg-slate-100 px-3 py-3 shadow-sm md:-mx-8 md:px-8">
+        <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center">
+          <label className="relative block">
+            <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Tìm món không dấu theo tên, danh mục..."
+              aria-label="Tìm món theo tên, danh mục hoặc mô tả"
+              className="field-input pl-10"
+            />
+          </label>
+          <label>
+            <span className="sr-only">Sắp xếp món ăn</span>
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="field-input">
+              <option value="name">Sắp xếp: Tên món</option>
+              <option value="price-asc">Giá: Thấp đến cao</option>
+              <option value="price-desc">Giá: Cao đến thấp</option>
+            </select>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 px-1 text-sm font-medium text-slate-600">
+            <input
+              type="checkbox"
+              checked={availableOnly}
+              onChange={(event) => setAvailableOnly(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-basil-600 focus:ring-basil-500"
+            />
+            Chỉ món còn hàng
+          </label>
+        </div>
+
+        <nav aria-label="Danh mục món ăn" className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-3">
+          <Link
+            to="/dishes"
+            aria-current={!categoryId ? 'page' : undefined}
+            className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
+              !categoryId ? 'bg-basil-600 text-white' : 'bg-white text-slate-600 hover:bg-basil-50 hover:text-basil-700'
+            }`}
+          >
+            Tất cả món <span className="ml-1 opacity-75">{dishes.length}</span>
+          </Link>
+          {groupedDishes.filter((group) => group.dishes.length > 0).map((group) => {
+            const active = String(categoryId) === group.id;
+            return (
+              <Link
+                key={group.id}
+                to={`/dishes/category/${group.id}`}
+                aria-current={active ? 'page' : undefined}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
+                  active ? 'bg-basil-600 text-white' : 'bg-white text-slate-600 hover:bg-basil-50 hover:text-basil-700'
+                }`}
+              >
+                {group.name} <span className="ml-1 opacity-75">{group.dishes.length}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+
       {isCustomerFacing && (
         <section className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-basil-700 via-basil-600 to-emerald-800 px-6 py-8 text-white shadow-sm sm:flex-row sm:items-center sm:px-9 sm:py-10">
           <div>
@@ -381,6 +460,10 @@ export default function DishesPage() {
         </section>
       )}
 
+      {isCustomerFacing && !authLoading && (
+        <DishRecommendations isCustomer={user?.role === 'customer'} />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-2xl font-semibold text-ink">
@@ -399,64 +482,6 @@ export default function DishesPage() {
       </div>
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}
-
-      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center">
-        <label className="relative block">
-          <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Tìm món không dấu theo tên, danh mục..."
-            aria-label="Tìm món theo tên, danh mục hoặc mô tả"
-            className="field-input pl-10"
-          />
-        </label>
-        <label>
-          <span className="sr-only">Sắp xếp món ăn</span>
-          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="field-input">
-            <option value="name">Sắp xếp: Tên món</option>
-            <option value="price-asc">Giá: Thấp đến cao</option>
-            <option value="price-desc">Giá: Cao đến thấp</option>
-          </select>
-        </label>
-        <label className="flex cursor-pointer items-center gap-2 px-1 text-sm font-medium text-slate-600">
-          <input
-            type="checkbox"
-            checked={availableOnly}
-            onChange={(event) => setAvailableOnly(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-basil-600 focus:ring-basil-500"
-          />
-          Chỉ món còn hàng
-        </label>
-      </div>
-
-      <nav aria-label="Danh mục món ăn" className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-3">
-        <Link
-          to="/dishes"
-          aria-current={!categoryId ? 'page' : undefined}
-          className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
-            !categoryId ? 'bg-basil-600 text-white' : 'bg-white text-slate-600 hover:bg-basil-50 hover:text-basil-700'
-          }`}
-        >
-          Tất cả món <span className="ml-1 opacity-75">{dishes.length}</span>
-        </Link>
-        {groupedDishes.filter((group) => group.dishes.length > 0).map((group) => {
-          const active = String(categoryId) === group.id;
-          return (
-            <Link
-              key={group.id}
-              to={`/dishes/category/${group.id}`}
-              aria-current={active ? 'page' : undefined}
-              className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
-                active ? 'bg-basil-600 text-white' : 'bg-white text-slate-600 hover:bg-basil-50 hover:text-basil-700'
-              }`}
-            >
-              {group.name} <span className="ml-1 opacity-75">{group.dishes.length}</span>
-            </Link>
-          );
-        })}
-      </nav>
 
       {loading ? (
         <div className="flex justify-center py-12">
@@ -688,6 +713,9 @@ export default function DishesPage() {
               <p className="mb-2 text-xs text-slate-500">
                 Quản lý danh sách tại <Link to="/ingredients" className="font-medium text-basil-600 hover:text-basil-700">trang nguyên liệu</Link>.
               </p>
+              <p className="mb-2 text-xs text-slate-500">
+                Định lượng cho 1 món, tính bằng gam. Nhập cho nguyên liệu chính; để trống nếu là gia vị.
+              </p>
               <input
                 value={ingredientSearch}
                 onChange={(e) => setIngredientSearch(e.target.value)}
@@ -702,17 +730,40 @@ export default function DishesPage() {
                 )}
                 {ingredients
                   .filter((ing) => ing.name.toLocaleLowerCase().includes(ingredientSearch.trim().toLocaleLowerCase()))
-                  .map((ing) => (
-                  <label key={ing.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      checked={form.ingredient_ids.includes(ing.id)}
-                      onChange={() => toggleIngredientInForm(ing.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-basil-500 focus:ring-basil-500"
-                    />
-                    {ing.name}
-                  </label>
-                  ))}
+                  .map((ing) => {
+                    const selectedIngredient = form.ingredients.find(
+                      (item) => item.ingredient_id === Number(ing.id)
+                    );
+                    return (
+                      <div key={ing.id} className="flex items-center gap-3 rounded-lg px-1.5 py-1 hover:bg-slate-50">
+                        <label htmlFor={`dish-ingredient-${ing.id}`} className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+                          <input
+                            id={`dish-ingredient-${ing.id}`}
+                            type="checkbox"
+                            checked={Boolean(selectedIngredient)}
+                            onChange={() => toggleIngredientInForm(ing.id)}
+                            className="h-4 w-4 rounded border-slate-300 text-basil-500 focus:ring-basil-500"
+                          />
+                          <span>{ing.name}</span>
+                        </label>
+                        {selectedIngredient && (
+                          <div className="flex shrink-0 items-center gap-1">
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={selectedIngredient.quantity_g}
+                              onChange={(event) => updateIngredientQuantity(ing.id, event.target.value)}
+                              placeholder="Gia vị"
+                              aria-label={`Định lượng ${ing.name} cho một món, tính bằng gam`}
+                              className="field-input w-24 py-1 text-right"
+                            />
+                            <span className="text-xs text-slate-500">g</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
