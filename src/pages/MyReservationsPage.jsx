@@ -480,7 +480,7 @@ export default function MyReservationsPage() {
             }}
           >
             <p className="text-sm text-slate-600">
-              Đơn đủ điều kiện hoàn 100% cọc ({money(cancelTarget.deposit_amount)}). Nhập thông tin tài khoản nhận tiền.
+              Đơn đủ điều kiện hoàn 100% cọc. Nhập thông tin tài khoản nhận tiền.
             </p>
             <label className="block">
               <span className="field-label">Ngân hàng</span>

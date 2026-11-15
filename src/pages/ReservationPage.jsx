@@ -1056,7 +1056,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                       {depositQr?.transaction_code && <p className="reservation-transfer-code">Nội dung: <strong>{depositQr.transaction_code}</strong></p>}
                     </div>
                     <div className="reservation-countdown"><Clock3 size={16} /> Thời gian giữ bàn <strong>{remainingSeconds !== null ? countdownText(remainingSeconds) : '--:--'}</strong></div>
-                    <p className="reservation-deposit-note">Sau khi chuyển khoản, hệ thống sẽ tự cập nhật khi thu ngân xác nhận.</p>
+                    <p className="reservation-deposit-note">Sau khi chuyển khoản, hệ thống sẽ tự cập nhật khi SePay xác nhận hoặc thu ngân xác nhận thủ công.</p>
                   </>
                 )}
               </div>

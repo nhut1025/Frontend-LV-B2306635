@@ -9,6 +9,18 @@ import { tablesApi } from '../api/tables';
 import { getErrorMessage } from '../api/client';
 
 const EMPTY_FILTERS = { from: '', to: '', table_id: '', cashier_id: '', payment_method: '' };
+function getCurrentMonthFilters() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return {
+    ...EMPTY_FILTERS,
+    from: `${year}-${month}-01`,
+    to: `${year}-${month}-${day}`,
+  };
+}
+const DEFAULT_FILTERS = getCurrentMonthFilters();
 const EMPTY_TOTALS = {
   bill_count: 0,
   paid_bill_count: 0,
@@ -18,8 +30,13 @@ const EMPTY_TOTALS = {
   cash_amount: 0,
   online_amount: 0,
 };
-const EMPTY_DEPOSIT_TOTALS = { refunded_amount: 0, forfeited_amount: 0 };
+const EMPTY_DEPOSIT_TOTALS = { received_amount: 0, refunded_amount: 0, forfeited_amount: 0 };
 const PAYMENT_LABELS = { tien_mat: 'Tiền mặt', online: 'Chuyển khoản' };
+const DEPOSIT_TRANSACTION_LABELS = {
+  received: 'Thu · Nhận cọc',
+  refund: 'Chi · Hoàn cọc',
+  forfeited: 'Phân loại · Cọc mất',
+};
 const BILL_STATUS_LABELS = {
   mo: 'Chưa thanh toán',
   da_thanh_toan: 'Đã thanh toán',
@@ -148,8 +165,8 @@ function FinanceBillDetail({ billId, onClose }) {
 }
 
 export default function FinancePage() {
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
   const [bills, setBills] = useState([]);
   const [totals, setTotals] = useState(EMPTY_TOTALS);
   const [depositTransactions, setDepositTransactions] = useState([]);
@@ -183,7 +200,13 @@ export default function FinancePage() {
     setDepositLoading(true);
     setDepositError('');
     const params = Object.fromEntries(
-      Object.entries({ from: nextFilters.from, to: nextFilters.to }).filter(([, value]) => value !== '')
+      Object.entries({
+        from: nextFilters.from,
+        to: nextFilters.to,
+        table_id: nextFilters.table_id,
+        cashier_id: nextFilters.cashier_id,
+        payment_method: nextFilters.payment_method,
+      }).filter(([, value]) => value !== '')
     );
     try {
       const response = await financeApi.listDepositTransactions(params);
@@ -215,8 +238,8 @@ export default function FinancePage() {
   }, []);
 
   useEffect(() => {
-    loadBills(EMPTY_FILTERS);
-    loadDepositTransactions(EMPTY_FILTERS);
+    loadBills(DEFAULT_FILTERS);
+    loadDepositTransactions(DEFAULT_FILTERS);
   }, []);
 
   function updateFilter(field, value) {
@@ -225,8 +248,15 @@ export default function FinancePage() {
 
   async function handleFilter(event) {
     event.preventDefault();
-    setAppliedFilters(filters);
-    await Promise.all([loadBills(filters), loadDepositTransactions(filters)]);
+    const defaultFilters = getCurrentMonthFilters();
+    const nextFilters = {
+      ...filters,
+      from: filters.from || defaultFilters.from,
+      to: filters.to || defaultFilters.to,
+    };
+    setFilters(nextFilters);
+    setAppliedFilters(nextFilters);
+    await Promise.all([loadBills(nextFilters), loadDepositTransactions(nextFilters)]);
   }
 
   return (
@@ -234,7 +264,7 @@ export default function FinancePage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-semibold text-ink">Thu chi</h1>
-          <p className="text-sm text-slate-500">Theo dõi bill, hoàn cọc và các khoản cọc mất</p>
+          <p className="text-sm text-slate-500">Theo dõi bill, hoàn cọc và các khoản cọc mất · Mặc định từ đầu tháng đến hôm nay</p>
         </div>
         <button
           type="button"
@@ -258,7 +288,6 @@ export default function FinancePage() {
         <div>
           <label className="field-label" htmlFor="finance-to">Đến ngày</label>
           <input id="finance-to" type="date" value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} className="field-input" />
-          <p className="mt-1 text-xs text-slate-400">Để trống ngày để xem toàn bộ lịch sử.</p>
         </div>
         <div>
           <label className="field-label" htmlFor="finance-table">Bàn</label>
@@ -296,15 +325,26 @@ export default function FinancePage() {
           <p className="mt-2 text-xl font-semibold text-ink">{Number(totals.bill_count || 0).toLocaleString('vi-VN')}</p>
         </div>
         <div className="card p-4">
-          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Thực thu</div>
+          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Thu bill (đã trừ cọc)</div>
           <p className="mt-2 text-xl font-semibold text-ink">{money(totals.collected_amount)}</p>
         </div>
         <div className="card p-4">
-          <div className="flex items-center gap-2 text-sm text-slate-500"><CalendarDays size={16} /> Tiền mặt</div>
+          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Nhận cọc</div>
+          <p className="mt-2 text-xl font-semibold text-basil-700">{money(depositTotals.received_amount)}</p>
+        </div>
+        <div className="card p-4">
+          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Dòng tiền ròng</div>
+          <p className="mt-2 text-xl font-semibold text-ink">
+            {money(Number(totals.collected_amount || 0) + Number(depositTotals.received_amount || 0) - Number(depositTotals.refunded_amount || 0))}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">Thu bill + nhận cọc − hoàn cọc</p>
+        </div>
+        <div className="card p-4">
+          <div className="flex items-center gap-2 text-sm text-slate-500"><CalendarDays size={16} /> Tiền mặt bill</div>
           <p className="mt-2 text-xl font-semibold text-ink">{money(totals.cash_amount)}</p>
         </div>
         <div className="card p-4">
-          <div className="flex items-center gap-2 text-sm text-slate-500"><CreditCard size={16} /> Chuyển khoản</div>
+          <div className="flex items-center gap-2 text-sm text-slate-500"><CreditCard size={16} /> Chuyển khoản bill</div>
           <p className="mt-2 text-xl font-semibold text-ink">{money(totals.online_amount)}</p>
         </div>
         <div className="card p-4">
@@ -312,7 +352,7 @@ export default function FinancePage() {
           <p className="mt-2 text-xl font-semibold text-clay-600">{money(depositTotals.refunded_amount)}</p>
         </div>
         <div className="card p-4">
-          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Cọc mất (quán giữ)</div>
+          <div className="flex items-center gap-2 text-sm text-slate-500"><Banknote size={16} /> Cọc mất (đã nhận)</div>
           <p className="mt-2 text-xl font-semibold text-basil-700">{money(depositTotals.forfeited_amount)}</p>
         </div>
       </div>
@@ -320,11 +360,13 @@ export default function FinancePage() {
       <section className="mb-6">
         <div className="mb-3">
           <h2 className="font-display text-lg font-semibold text-ink">Thu / chi từ tiền cọc</h2>
-          <p className="text-sm text-slate-500">Chỉ tính cọc đã hoàn thực tế hoặc cọc đã chuyển sang trạng thái mất.</p>
+          <p className="text-sm text-slate-500">
+            Hiển thị giao dịch mới nhất trước; cuộn trong bảng để xem các giao dịch cũ hơn. Cọc mất không cộng lần hai.
+          </p>
         </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <div className="max-h-[500px] overflow-auto rounded-2xl border border-slate-200 bg-white">
           <table className="w-full min-w-[700px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-medium text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-medium text-slate-500">
               <tr>
                 <th className="px-4 py-3">Ngày</th>
                 <th className="px-4 py-3">Đặt bàn</th>
@@ -333,21 +375,32 @@ export default function FinancePage() {
                 <th className="px-4 py-3 text-right">Số tiền</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="whitespace-nowrap">
               {depositLoading ? (
                 <tr><td colSpan="5" className="px-4 py-8 text-center"><Loader2 className="mx-auto animate-spin text-slate-400" size={20} /></td></tr>
               ) : depositTransactions.length === 0 ? (
                 <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-500">Không có giao dịch cọc trong khoảng thời gian này.</td></tr>
               ) : depositTransactions.map((transaction, index) => (
-                <tr key={`${transaction.reservation_id}-${transaction.transaction_type}-${index}`} className="border-t border-slate-100">
+                <tr key={`${transaction.reservation_id}-${transaction.transaction_type}-${index}`} className="h-11 border-t border-slate-100">
                   <td className="px-4 py-3 text-slate-600">{formatDateTime(transaction.transaction_at)}</td>
                   <td className="px-4 py-3 text-ink">#{transaction.reservation_id}</td>
-                  <td className={`px-4 py-3 font-medium ${transaction.transaction_type === 'refund' ? 'text-clay-600' : 'text-basil-700'}`}>
-                    {transaction.transaction_type === 'refund' ? 'Chi · Hoàn cọc' : 'Thu · Cọc mất'}
+                  <td className={`px-4 py-3 font-medium ${
+                    transaction.transaction_type === 'refund'
+                      ? 'text-clay-600'
+                      : transaction.transaction_type === 'received' ? 'text-basil-700' : 'text-slate-600'
+                  }`}>
+                    {DEPOSIT_TRANSACTION_LABELS[transaction.transaction_type] || transaction.transaction_type}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{transaction.handled_by_name || 'Tự động ghi nhận'}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${transaction.transaction_type === 'refund' ? 'text-clay-600' : 'text-basil-700'}`}>
-                    {transaction.transaction_type === 'refund' ? '−' : '+'}{money(transaction.amount)}
+                  <td className={`px-4 py-3 text-right font-semibold ${
+                    transaction.transaction_type === 'refund'
+                      ? 'text-clay-600'
+                      : transaction.transaction_type === 'received' ? 'text-basil-700' : 'text-slate-600'
+                  }`}>
+                    {transaction.transaction_type === 'refund'
+                      ? '−'
+                      : transaction.transaction_type === 'received' ? '+' : ''}
+                    {money(transaction.amount)}
                   </td>
                 </tr>
               ))}
@@ -356,9 +409,14 @@ export default function FinancePage() {
         </div>
       </section>
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <section>
+        <div className="mb-3">
+          <h2 className="font-display text-lg font-semibold text-ink">Danh sách bill</h2>
+          <p className="text-sm text-slate-500">Bill mới nhất hiển thị trước; cuộn trong bảng để xem các bill cũ hơn.</p>
+        </div>
+        <div className="max-h-[500px] overflow-auto rounded-2xl border border-slate-200 bg-white">
         <table className="w-full min-w-[1000px] text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-medium text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-medium text-slate-500">
             <tr>
               <th className="px-4 py-3">Thời gian</th>
               <th className="px-4 py-3">Trạng thái</th>
@@ -371,14 +429,14 @@ export default function FinancePage() {
               <th className="px-4 py-3 text-right">Chi tiết</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="whitespace-nowrap">
             {loading ? (
               <tr><td colSpan="9" className="px-4 py-12 text-center"><Loader2 className="mx-auto animate-spin text-slate-400" size={22} /></td></tr>
             ) : bills.length === 0 ? (
               <tr><td colSpan="9" className="px-4 py-10 text-center text-slate-500">Không có bill phù hợp bộ lọc.</td></tr>
             ) : (
               bills.map((bill) => (
-                <tr key={bill.bill_id} className="border-t border-slate-100 hover:bg-slate-50/70">
+                <tr key={bill.bill_id} className="h-11 border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-4 py-3">
                     <span className="font-medium text-ink">{formatDateTime(bill.paid_at)}</span>
                   </td>
@@ -421,7 +479,8 @@ export default function FinancePage() {
             </tfoot>
           )}
         </table>
-      </div>
+        </div>
+      </section>
 
       {selectedBillId !== null && <FinanceBillDetail billId={selectedBillId} onClose={() => setSelectedBillId(null)} />}
     </Layout>

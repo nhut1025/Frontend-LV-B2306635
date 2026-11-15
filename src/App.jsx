@@ -23,6 +23,7 @@ import ReservationTimingSettingsPage from './pages/ReservationTimingSettingsPage
 import KitchenPage from './pages/KitchenPage';
 import PaymentsPage from './pages/PaymentsPage';
 import FinancePage from './pages/FinancePage';
+import PaymentHistoryPage from './pages/PaymentHistoryPage';
 import TopSellingDishesPage from './pages/TopSellingDishesPage';
 import CategoriesPage from './pages/CategoriesPage';
 import IngredientsPage from './pages/IngredientsPage';
@@ -209,6 +210,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['thu_ngan']}>
                 <PaymentsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/payment-history"
+            element={
+              <ProtectedRoute allowedRoles={['thu_ngan']}>
+                <PaymentHistoryPage />
               </ProtectedRoute>
             }
           />

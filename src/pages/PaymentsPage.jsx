@@ -353,6 +353,13 @@ export default function PaymentsPage() {
       );
       loadBills();
     });
+    socket.on('cashier:bill-paid', (bill) => {
+      setSelectedBillId((current) => (
+        Number(current) === Number(bill.bill_id) ? null : current
+      ));
+      setNotice(`Bill bàn ${bill.table_number} đã được thanh toán qua chuyển khoản.`);
+      loadBills();
+    });
     return () => socket.disconnect();
   }, [loadBills]);
 

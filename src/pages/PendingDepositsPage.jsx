@@ -4,6 +4,7 @@ import { Loader2, CheckCircle2, Users, Phone } from 'lucide-react';
 import Layout from '../components/Layout';
 import Alert from '../components/Alert';
 import { reservationsApi } from '../api/reservations';
+import { createSocket } from '../api/socket';
 import { getErrorMessage } from '../api/client';
 
 export default function PendingDepositsPage() {
@@ -25,9 +26,13 @@ export default function PendingDepositsPage() {
 
   useEffect(() => {
     load();
-    // Tự làm mới mỗi 10 giây — danh sách này cần cập nhật nhanh vì mỗi đơn chỉ có 3 phút
     const intervalId = setInterval(load, 10000);
-    return () => clearInterval(intervalId);
+    const socket = createSocket();
+    socket.on('cashier:deposit-confirmed', load);
+    return () => {
+      clearInterval(intervalId);
+      socket.disconnect();
+    };
   }, []);
 
   async function handleConfirm(reservationId) {
@@ -48,7 +53,7 @@ export default function PendingDepositsPage() {
     <Layout>
       <div className="mb-6">
         <h1 className="font-display text-2xl font-semibold text-ink">Cọc chờ xác nhận</h1>
-        <p className="text-sm text-slate-500">Kiểm tra tài khoản ngân hàng rồi xác nhận từng đơn</p>
+        <p className="text-sm text-slate-500">SePay tự xác nhận cọc đủ tiền; thu ngân vẫn có thể kiểm tra và xác nhận thủ công.</p>
       </div>
 
       {error && <div className="mb-4"><Alert type="error">{error}</Alert></div>}

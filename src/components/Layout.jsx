@@ -26,6 +26,7 @@ const navItems = [
   { to: '/pending-refunds', label: 'Hoàn cọc', icon: Receipt, roles: ['manager'], badge: 'refunds' },
   { to: '/pending-preorders', label: 'Món đặt trước', icon: PhoneCall, roles: ['thu_ngan'], badge: 'preorders' },
   { to: '/payments', label: 'Thanh toán bill', icon: Banknote, roles: ['thu_ngan'], badge: 'bills' },
+  { to: '/payment-history', label: 'Lịch sử giao dịch', icon: Receipt, roles: ['thu_ngan'] },
   { to: '/finance', label: 'Thu chi', icon: Banknote, roles: ['manager'] },
   { to: '/top-selling-dishes', label: 'Món bán chạy', icon: TrendingUp, roles: ['manager'] },
   { to: '/bank-settings', label: 'Tài khoản nhận cọc', icon: Landmark, roles: ['manager'] },
@@ -37,6 +38,7 @@ export default function Layout({ children, flushTop = false }) {
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ deposits: 0, preorders: 0, bills: 0, refunds: 0, chat: 0 });
   const [refundNotice, setRefundNotice] = useState('');
+  const [depositLateNotice, setDepositLateNotice] = useState('');
 
   // Huy hiệu số đếm cho thu_ngan — tự làm mới mỗi 10 giây, hiện ở mọi trang để không bỏ sót việc:
   //  - deposits: số cọc đang chờ xác nhận
@@ -63,7 +65,21 @@ export default function Layout({ children, flushTop = false }) {
 
     loadCount();
     const intervalId = setInterval(loadCount, 10000);
-    return () => clearInterval(intervalId);
+    const socket = createSocket();
+    socket.on('cashier:deposit-confirmed', loadCount);
+    socket.on('cashier:deposit-late-payment', (payment) => {
+      const code = payment.transaction_code || `COC${payment.reservation_id}`;
+      const amount = Number(payment.transfer_amount).toLocaleString('vi-VN');
+      setDepositLateNotice(
+        `SePay đã nhận ${amount}đ (${code}) nhưng chưa thể xác nhận cọc cho đặt bàn #${payment.reservation_id}. ` +
+        'Vui lòng kiểm tra giao dịch và xử lý hoặc hoàn tiền thủ công.'
+      );
+      loadCount();
+    });
+    return () => {
+      clearInterval(intervalId);
+      socket.disconnect();
+    };
   }, [user?.role]);
 
   useEffect(() => {
@@ -206,6 +222,26 @@ export default function Layout({ children, flushTop = false }) {
             Xem
           </NavLink>
           <button type="button" onClick={() => setRefundNotice('')} aria-label="Đóng thông báo" className="shrink-0 text-slate-400 hover:text-ink">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {depositLateNotice && (
+        <div role="alert" className="fixed right-4 top-20 z-50 flex max-w-lg items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg">
+          <span>{depositLateNotice}</span>
+          <NavLink
+            to="/pending-deposits"
+            onClick={() => setDepositLateNotice('')}
+            className="shrink-0 font-semibold underline"
+          >
+            Xử lý
+          </NavLink>
+          <button
+            type="button"
+            onClick={() => setDepositLateNotice('')}
+            aria-label="Đóng thông báo"
+            className="shrink-0 hover:opacity-70"
+          >
             <X size={14} />
           </button>
         </div>
