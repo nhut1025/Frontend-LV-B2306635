@@ -12,6 +12,7 @@ export const billsApi = {
 
   // Phase 6: Kitchen Display System
   kitchenQueue: () => client.get('/bills/kitchen-queue'),
+  kitchenHistory: (params) => client.get('/bills/kitchen-history', { params }),
   readyItems: () => client.get('/bills/ready-items'),
   advanceItem: (itemId, expectedStatus) =>
     client.patch(`/bills/items/${itemId}/advance`, { expected_status: expectedStatus }),
