@@ -5,9 +5,12 @@ import Layout from '../components/Layout';
 import Alert from '../components/Alert';
 import { dishesApi } from '../api/dishes';
 import { getErrorMessage } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import DishRecommendations from '../components/DishRecommendations';
 
 export default function DishDetailPage() {
   const { id } = useParams();
+  const { user, loading: authLoading } = useAuth();
   const [dish, setDish] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,21 +53,23 @@ export default function DishDetailPage() {
 
   return (
     <Layout>
-      <Link to="/dishes" className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-basil-600">
-        <ArrowLeft size={16} />
-        Quay lại danh sách món
-      </Link>
+      <div className="mx-auto max-w-7xl">
+        <Link to="/dishes" className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-basil-600">
+          <ArrowLeft size={16} />
+          Quay lại danh sách món
+        </Link>
 
-      {loading && (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin text-slate-400" size={24} />
-        </div>
-      )}
+        {loading && (
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-slate-400" size={24} />
+          </div>
+        )}
 
-      {!loading && error && <Alert type="error">{error}</Alert>}
+        {!loading && error && <Alert type="error">{error}</Alert>}
 
-      {!loading && !error && dish && (
-        <article className="max-w-3xl">
+        {!loading && !error && dish && (
+          <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+            <article className="min-w-0">
           {images.length > 0 && (
             <section aria-label={`Hình ảnh ${dish.name}`}>
               <img
@@ -100,6 +105,15 @@ export default function DishDetailPage() {
                   <span className="mt-2 inline-block rounded-full bg-basil-50 px-2.5 py-0.5 text-xs font-medium text-basil-700">
                     {dish.category}
                   </span>
+                )}
+                {dish.tags?.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {dish.tags.map((tag) => (
+                      <span key={tag.id} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
               <p className="font-mono text-lg font-semibold text-ink">
@@ -187,8 +201,19 @@ export default function DishDetailPage() {
               </div>
             )}
           </section>
-        </article>
-      )}
+            </article>
+            <aside className="min-w-0" aria-label="Món ăn gợi ý">
+              {!authLoading && (
+                <DishRecommendations
+                  isCustomer={user?.role === 'customer'}
+                  compact
+                  excludeDishId={id}
+                />
+              )}
+            </aside>
+          </div>
+        )}
+      </div>
     </Layout>
   );
 }

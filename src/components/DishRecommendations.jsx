@@ -4,18 +4,22 @@ import { Link } from 'react-router-dom';
 import { recommendationsApi } from '../api/recommendations';
 import { getErrorMessage } from '../api/client';
 
-function RecommendationGrid({ recommendations }) {
+function RecommendationGrid({ recommendations, compact = false }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className={compact ? 'grid grid-cols-1 gap-3' : 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'}>
       {recommendations.map((dish) => (
         <article
           key={dish.dish_id}
-          className="flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-200 p-3 transition hover:border-basil-200 hover:shadow-sm"
+          className={`flex min-w-0 gap-3 rounded-2xl border border-slate-200 p-3 transition hover:border-basil-200 hover:shadow-sm ${
+            compact ? 'items-center' : 'flex-col'
+          }`}
         >
           <Link
             to={`/dishes/${dish.dish_id}`}
             aria-label={`Xem món ${dish.name}`}
-            className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-slate-50"
+            className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ${
+              compact ? 'h-20 w-24' : 'aspect-[4/3]'
+            }`}
           >
             {dish.image_url ? (
               <img
@@ -28,7 +32,7 @@ function RecommendationGrid({ recommendations }) {
               <UtensilsCrossed size={30} className="text-basil-500" aria-hidden="true" />
             )}
           </Link>
-          <div className="flex flex-1 flex-col">
+          <div className="flex min-w-0 flex-1 flex-col">
             <p className="text-xs font-semibold uppercase tracking-wide text-basil-700">
               {dish.category || 'Món ngon'}
             </p>
@@ -51,7 +55,11 @@ function RecommendationGrid({ recommendations }) {
   );
 }
 
-export default function DishRecommendations({ isCustomer }) {
+export default function DishRecommendations({
+  isCustomer,
+  compact = false,
+  excludeDishId,
+}) {
   const [personalizedRecommendations, setPersonalizedRecommendations] = useState([]);
   const [popularRecommendations, setPopularRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -88,11 +96,16 @@ export default function DishRecommendations({ isCustomer }) {
           throw new Error('Dữ liệu gợi ý món ăn không hợp lệ.');
         }
         if (active) {
+          const isVisibleDish = (dish) => (
+            excludeDishId == null || Number(dish.dish_id) !== Number(excludeDishId)
+          );
           const personalized = personalizedData?.model === 'content_based'
             ? personalizedData.recommendations
+              .filter(isVisibleDish)
             : [];
           const personalizedDishIds = new Set(personalized.map((dish) => dish.dish_id));
           const popular = popularData.recommendations
+            .filter(isVisibleDish)
             .filter((dish) => !personalizedDishIds.has(dish.dish_id))
             .slice(0, 8);
           setPersonalizedRecommendations(personalized);
@@ -107,14 +120,21 @@ export default function DishRecommendations({ isCustomer }) {
 
     loadRecommendations();
     return () => { active = false; };
-  }, [isCustomer, reloadKey]);
+  }, [excludeDishId, isCustomer, reloadKey]);
+
+  const sidebarRecommendations = [
+    ...personalizedRecommendations,
+    ...popularRecommendations,
+  ].slice(0, 6);
 
   return (
     <section
       aria-labelledby="dish-recommendations-heading"
       className="overflow-hidden rounded-3xl border border-basil-100 bg-white shadow-sm"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-basil-50 px-5 py-5 sm:px-7">
+      <div className={`flex flex-wrap items-center justify-between gap-3 bg-basil-50 ${
+        compact ? 'px-4 py-4' : 'px-5 py-5 sm:px-7'
+      }`}>
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-basil-700">
             <Sparkles size={15} aria-hidden="true" />
@@ -122,7 +142,9 @@ export default function DishRecommendations({ isCustomer }) {
           </p>
           <h2
             id="dish-recommendations-heading"
-            className="mt-1 font-display text-xl font-semibold text-ink sm:text-2xl"
+            className={`mt-1 font-display font-semibold text-ink ${
+              compact ? 'text-lg' : 'text-xl sm:text-2xl'
+            }`}
           >
             Gợi ý món ăn
           </h2>
@@ -144,7 +166,7 @@ export default function DishRecommendations({ isCustomer }) {
         )}
       </div>
 
-      <div className="p-5 sm:p-7">
+      <div className={compact ? 'p-3 sm:p-4' : 'p-5 sm:p-7'}>
         {loading ? (
           <div className="flex justify-center py-8" role="status" aria-live="polite">
             <Loader2 className="animate-spin text-basil-600" size={24} />
@@ -162,10 +184,14 @@ export default function DishRecommendations({ isCustomer }) {
               Thử lại
             </button>
           </div>
-        ) : personalizedRecommendations.length === 0 && popularRecommendations.length === 0 ? (
+        ) : (compact
+          ? sidebarRecommendations.length === 0
+          : personalizedRecommendations.length === 0 && popularRecommendations.length === 0) ? (
           <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
             Hiện chưa có món phù hợp để gợi ý. Bạn có thể xem toàn bộ thực đơn bên dưới.
           </p>
+        ) : compact ? (
+          <RecommendationGrid recommendations={sidebarRecommendations} compact />
         ) : (
           <div className="space-y-7">
             {personalizedRecommendations.length > 0 && (

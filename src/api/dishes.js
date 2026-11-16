@@ -3,6 +3,7 @@ import client from './client';
 
 export const dishesApi = {
   list: (params) => client.get('/dishes', { params }),
+  listTags: () => client.get('/dishes/tags'),
   getById: (id) => client.get(`/dishes/${id}`),
   getReviews: (id) => client.get(`/dishes/${id}/reviews`),
   uploadImage: (file) => {

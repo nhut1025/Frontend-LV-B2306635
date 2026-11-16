@@ -14,7 +14,7 @@ import { settingsApi } from '../api/settings';
 import { getErrorMessage } from '../api/client';
 import DishRecommendations from '../components/DishRecommendations';
 
-const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredients: [] };
+const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredients: [], tags: [] };
 
 function formatPrice(value) {
   const digits = String(value ?? '').replace(/\D/g, '');
@@ -64,6 +64,7 @@ export default function DishesPage() {
   const [dishes, setDishes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [dishTags, setDishTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -126,11 +127,12 @@ export default function DishesPage() {
     setLoading(true);
     setError('');
     try {
-      const requests = [dishesApi.list(), categoriesApi.list()];
+      const requests = [dishesApi.list(), categoriesApi.list(), dishesApi.listTags()];
       if (isManager) requests.push(ingredientsApi.list());
-      const [dishesRes, categoriesRes, ingredientsRes] = await Promise.all(requests);
+      const [dishesRes, categoriesRes, tagsRes, ingredientsRes] = await Promise.all(requests);
       setDishes(dishesRes.data.dishes || []);
       setCategories(categoriesRes.data.categories || []);
+      setDishTags(tagsRes.data.tags || []);
       if (ingredientsRes) setIngredients(ingredientsRes.data.ingredients || []);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -184,6 +186,7 @@ export default function DishesPage() {
       category_id: categories.some((category) => String(category.id) === String(categoryId))
         ? String(categoryId)
         : '',
+      tags: [],
     });
     setShowDishModal(true);
   }
@@ -215,6 +218,7 @@ export default function DishesPage() {
           ingredient_id: Number(ingredient.id),
           quantity_g: ingredient.quantity_g == null ? '' : String(ingredient.quantity_g),
         })),
+        tags: (fullDish.tags || []).map((tag) => Number(tag.id)),
       });
       setImageUrlDraft('');
       setShowDishModal(true);
@@ -231,6 +235,16 @@ export default function DishesPage() {
       ingredients: f.ingredients.some((item) => item.ingredient_id === Number(id))
         ? f.ingredients.filter((item) => item.ingredient_id !== Number(id))
         : [...f.ingredients, { ingredient_id: Number(id), quantity_g: '' }],
+    }));
+  }
+
+  function toggleTagInForm(tagId) {
+    const numericTagId = Number(tagId);
+    setForm((f) => ({
+      ...f,
+      tags: f.tags.includes(numericTagId)
+        ? f.tags.filter((value) => value !== numericTagId)
+        : [...f.tags, numericTagId],
     }));
   }
 
@@ -313,8 +327,9 @@ export default function DishesPage() {
     setSaving(true);
     setDishFormError('');
     try {
+    const { tags, ...dishForm } = form;
       const payload = {
-        ...form,
+      ...dishForm,
         category_id: Number(form.category_id),
         image_url: form.image_urls[0] || '',
         price: Number(form.price.replace(/\D/g, '')),
@@ -324,6 +339,7 @@ export default function DishesPage() {
             ? null
             : Number(ingredient.quantity_g),
         })),
+        tag_ids: tags,
       };
       if (editingDish) {
         await dishesApi.update(editingDish.id, payload);
@@ -460,7 +476,7 @@ export default function DishesPage() {
         </section>
       )}
 
-      {isCustomerFacing && !authLoading && (
+      {isCustomerFacing && !authLoading && !categoryId && !searchTerm.trim() && (
         <DishRecommendations isCustomer={user?.role === 'customer'} />
       )}
 
@@ -537,6 +553,15 @@ export default function DishesPage() {
                   </p>
                 </div>
                 {dish.description && <p className="line-clamp-2 text-sm text-slate-500">{dish.description}</p>}
+                {dish.tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {dish.tags.map((tag) => (
+                      <span key={tag.id} className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
                   <Link to={`/dishes/${dish.id}`} className="inline-flex items-center rounded-full bg-basil-50 px-3.5 py-2 text-xs font-semibold text-basil-700 transition hover:bg-basil-100">
@@ -584,6 +609,10 @@ export default function DishesPage() {
             );
           })}
         </div>
+      )}
+
+      {isCustomerFacing && !authLoading && (categoryId || searchTerm.trim()) && (
+        <DishRecommendations isCustomer={user?.role === 'customer'} />
       )}
 
       {isCustomerFacing && (
@@ -653,6 +682,33 @@ export default function DishesPage() {
                 className="field-input"
                 rows={2}
               />
+            </div>
+
+            <div>
+              <label className="field-label">Thẻ món ăn</label>
+              <div className="flex flex-wrap gap-2">
+                {dishTags.length === 0 ? (
+                  <p className="text-sm text-slate-500">Chưa có thẻ món ăn nào.</p>
+                ) : dishTags.map((tag) => {
+                  const checked = form.tags.includes(Number(tag.id));
+                  return (
+                    <label
+                      key={tag.id}
+                      className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                        checked ? 'border-basil-500 bg-basil-50 text-basil-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={checked}
+                        onChange={() => toggleTagInForm(tag.id)}
+                      />
+                      {tag.name}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div>
