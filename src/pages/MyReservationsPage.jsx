@@ -7,26 +7,22 @@ import Alert from '../components/Alert';
 import Modal from '../components/Modal';
 import { reservationsApi } from '../api/reservations';
 import { billsApi } from '../api/bills';
+import { usersApi } from '../api/users';
 import { getErrorMessage } from '../api/client';
+import { useCustomerTranslation } from '../i18n/useCustomerTranslation';
+import { formatCurrency, formatDate, formatDateTime } from '../i18n/formatters';
 
 const STATUS_CONFIG = {
-  giu_tam: { label: 'Đang giữ tạm', badge: 'bg-saffron-50 text-saffron-700' },
-  da_dat: { label: 'Đã đặt (đã cọc)', badge: 'bg-basil-50 text-basil-700' },
-  hoan_thanh: { label: 'Hoàn thành', badge: 'bg-slate-100 text-slate-600' },
-  da_huy: { label: 'Đã huỷ', badge: 'bg-slate-100 text-slate-500' },
-  qua_han: { label: 'Quá hạn (no-show)', badge: 'bg-clay-50 text-clay-600' },
+  giu_tam: { key: 'giu_tam', badge: 'bg-saffron-50 text-saffron-700' },
+  da_dat: { key: 'da_dat', badge: 'bg-basil-50 text-basil-700' },
+  hoan_thanh: { key: 'hoan_thanh', badge: 'bg-slate-100 text-slate-600' },
+  da_huy: { key: 'da_huy', badge: 'bg-slate-100 text-slate-500' },
+  qua_han: { key: 'qua_han', badge: 'bg-clay-50 text-clay-600' },
 };
-const CANCELLER_LABELS = { customer: 'Bạn', staff: 'Nhân viên' };
-const PAYMENT_LABELS = { tien_mat: 'Tiền mặt', online: 'Chuyển khoản' };
-const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
-
-function formatDateTime(value) {
-  if (!value) return '—';
-  const date = new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('vi-VN');
-}
 
 export default function MyReservationsPage() {
+  const { t, locale } = useCustomerTranslation();
+  const money = (value) => formatCurrency(value, locale);
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -35,10 +31,10 @@ export default function MyReservationsPage() {
   const [billHistoryError, setBillHistoryError] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
   const [refundDetails, setRefundDetails] = useState({
-    refund_bank_code: '',
-    refund_account_number: '',
-    refund_account_name: '',
+    refund_bank_account_id: '',
   });
+  const [refundBankAccounts, setRefundBankAccounts] = useState([]);
+  const [loadingRefundBankAccounts, setLoadingRefundBankAccounts] = useState(false);
   const [cancellingId, setCancellingId] = useState(null);
   const [cancelError, setCancelError] = useState('');
   const [cancelSuccess, setCancelSuccess] = useState('');
@@ -95,17 +91,19 @@ export default function MyReservationsPage() {
 
   async function cancelReservation(reservation, details = {}) {
     if (reservation.status === 'da_dat' && !Number(reservation.cancel_refund_eligible)
-      && !confirm('Hủy lúc này sẽ mất toàn bộ tiền cọc. Bạn có chắc muốn tiếp tục?')) return;
+      && !confirm(t('myReservations.forfeitConfirm'))) return;
     if (reservation.status === 'giu_tam'
-      && !confirm('Hủy lượt giữ bàn chưa thanh toán? Bàn sẽ được trả lại.')) return;
+      && !confirm(t('myReservations.holdCancelConfirm'))) return;
 
     setCancellingId(reservation.id);
     setCancelError('');
     setCancelSuccess('');
     try {
-      const requestData = reservation.status === 'da_dat' && !Number(reservation.cancel_refund_eligible)
-        ? { accept_forfeiture: true }
-        : details;
+      const requestData = reservation.status !== 'da_dat'
+        ? {}
+        : !Number(reservation.cancel_refund_eligible)
+          ? { accept_forfeiture: true }
+          : { refund_bank_account_id: Number(details.refund_bank_account_id) };
       const response = await reservationsApi.cancelMine(reservation.id, requestData);
       setReservations((current) => current.map((item) => item.id === reservation.id
         ? {
@@ -129,7 +127,7 @@ export default function MyReservationsPage() {
           const latestTarget = latestReservations.find((item) => item.id === reservation.id);
           if (latestTarget && !Number(latestTarget.cancel_refund_eligible)) setCancelTarget(null);
         } catch (refreshError) {
-          setCancelError(`${getErrorMessage(err)} Không thể làm mới trạng thái đơn: ${getErrorMessage(refreshError)}`);
+          setCancelError(`${getErrorMessage(err)} ${t('myReservations.refreshStatusError')}: ${getErrorMessage(refreshError)}`);
         }
       }
     } finally {
@@ -137,11 +135,24 @@ export default function MyReservationsPage() {
     }
   }
 
-  function openCancellation(reservation) {
+  async function openCancellation(reservation) {
     setCancelError('');
     if (Number(reservation.cancel_refund_eligible)) {
-      setRefundDetails({ refund_bank_code: '', refund_account_number: '', refund_account_name: '' });
       setCancelTarget(reservation);
+      setRefundBankAccounts([]);
+      setRefundDetails({ refund_bank_account_id: '' });
+      setLoadingRefundBankAccounts(true);
+      try {
+        const response = await usersApi.listRefundBankAccounts();
+        const accounts = response.data.accounts || [];
+        setRefundBankAccounts(accounts);
+        const defaultAccount = accounts.find((account) => Boolean(account.is_default)) || accounts[0];
+        setRefundDetails({ refund_bank_account_id: defaultAccount ? String(defaultAccount.id) : '' });
+      } catch (err) {
+        setCancelError(getErrorMessage(err));
+      } finally {
+        setLoadingRefundBankAccounts(false);
+      }
       return;
     }
     cancelReservation(reservation);
@@ -167,13 +178,13 @@ export default function MyReservationsPage() {
     event.preventDefault();
     if (!reviewTarget) return;
     if (!Number.isInteger(reviewForm.rating) || reviewForm.rating < 1 || reviewForm.rating > 5) {
-      setReviewError('Vui lòng chấm từ 1 đến 5 sao cho bill.');
+      setReviewError(t('myReservations.reviewOverallRequired'));
       return;
     }
     if (['food_rating', 'service_rating', 'ambience_rating'].some(
       (key) => !Number.isInteger(reviewForm[key]) || reviewForm[key] < 1 || reviewForm[key] > 5
     )) {
-      setReviewError('Vui lòng chấm điểm món ăn, phục vụ và không gian từ 1 đến 5 sao.');
+      setReviewError(t('myReservations.reviewCategoriesRequired'));
       return;
     }
     const itemFeedback = reviewTarget.items.map((item) => ({
@@ -181,7 +192,7 @@ export default function MyReservationsPage() {
       sentiment: reviewForm.itemFeedback[item.id],
     }));
     if (itemFeedback.some((item) => !['like', 'dislike'].includes(item.sentiment))) {
-      setReviewError('Vui lòng chọn thích hoặc không thích cho từng món trong bill.');
+      setReviewError(t('myReservations.reviewItemsRequired'));
       return;
     }
 
@@ -233,12 +244,12 @@ export default function MyReservationsPage() {
     <Layout>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink">Đặt bàn của tôi</h1>
-          <p className="text-sm text-slate-500">Lịch sử các lần đặt bàn</p>
+          <h1 className="font-display text-2xl font-semibold text-ink">{t('myReservations.title')}</h1>
+          <p className="text-sm text-slate-500">{t('myReservations.history')}</p>
         </div>
         <Link to="/reservations" className="btn-primary">
           <Plus size={16} />
-          Đặt bàn mới
+          {t('myReservations.newReservation')}
         </Link>
       </div>
 
@@ -253,7 +264,7 @@ export default function MyReservationsPage() {
           <Loader2 className="animate-spin text-slate-400" size={24} />
         </div>
       ) : reservations.length === 0 ? (
-        <div className="card text-center text-sm text-slate-500">Bạn chưa có lần đặt bàn nào.</div>
+        <div className="card text-center text-sm text-slate-500">{t('myReservations.empty')}</div>
       ) : (
         <div className="space-y-3">
           {reservations.map((r) => {
@@ -264,10 +275,17 @@ export default function MyReservationsPage() {
               <div key={r.id} className="card flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-ink">
-                    #{r.id} — {r.reservation_date} lúc {r.reservation_time}
+                    #{r.id} — {t('myReservations.reservationLine', {
+                      date: formatDate(r.reservation_date, locale),
+                      time: r.reservation_time,
+                    })}
                   </p>
                   <p className="mt-0.5 text-sm text-slate-500">
-                    {r.party_size} khách · Bàn: {r.table_ids || '—'} · SĐT: {r.phone}
+                    {t('myReservations.reservationDetails', {
+                      guests: t('myReservations.guests', { count: r.party_size }),
+                      tables: r.table_ids || '—',
+                      phone: r.phone,
+                    })}
                   </p>
                   {(() => {
                     const preorder = preorders[r.id];
@@ -275,11 +293,11 @@ export default function MyReservationsPage() {
                     if (!items.length) return null;
                     return (
                       <div className="mt-3 border-t border-slate-100 pt-3">
-                        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-ink"><UtensilsCrossed size={14} />Món đặt trước</p>
+                        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-ink"><UtensilsCrossed size={14} />{t('myReservations.preorder')}</p>
                         <ul className="space-y-1 text-sm text-slate-600">
                           {items.map((item, index) => (
                             <li key={item.id || `${item.dish_id}-${index}`}>
-                              {item.dish_name || item.name || `Món #${item.dish_id}`} × {item.quantity}
+                              {item.dish_name || item.name || t('myReservations.dishFallback', { id: item.dish_id })} × {item.quantity}
                               {item.note && <span className="text-slate-400"> · {item.note}</span>}
                             </li>
                           ))}
@@ -291,37 +309,39 @@ export default function MyReservationsPage() {
                     <details className="mt-3 border-t border-slate-100 pt-3">
                       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-basil-700">
                         <Receipt size={14} />
-                        Xem bill ({billsByReservation[r.id].length})
+                        {t('myReservations.viewBill', { count: billsByReservation[r.id].length })}
                       </summary>
                       <div className="mt-3 space-y-3">
                         {billsByReservation[r.id].map((bill) => (
                           <div key={bill.id} className="rounded-lg border border-slate-200 p-3">
-                            <h3 className="mb-3 font-medium text-ink">Chi tiết bill #{bill.id}</h3>
+                            <h3 className="mb-3 font-medium text-ink">{t('myReservations.billDetails', { id: bill.id })}</h3>
                             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:grid-cols-3">
                               <div>
-                                <dt className="text-slate-500">Bàn</dt>
+                                <dt className="text-slate-500">{t('myReservations.table')}</dt>
                                 <dd className="mt-0.5 font-medium text-ink">{bill.table_number}</dd>
                               </div>
                               <div>
-                                <dt className="text-slate-500">Thanh toán lúc</dt>
-                                <dd className="mt-0.5 font-medium text-ink">{formatDateTime(bill.paid_at)}</dd>
+                                <dt className="text-slate-500">{t('myReservations.paidAt')}</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{formatDateTime(bill.paid_at, locale)}</dd>
                               </div>
                               <div>
-                                <dt className="text-slate-500">Phương thức</dt>
-                                <dd className="mt-0.5 font-medium text-ink">{PAYMENT_LABELS[bill.payment_method] || '—'}</dd>
-                              </div>
-                              <div>
-                                <dt className="text-slate-500">Thu ngân thanh toán</dt>
-                                <dd className="mt-0.5 font-medium text-ink">{bill.cashier_name || 'Chưa ghi nhận'}</dd>
-                              </div>
-                              <div>
-                                <dt className="text-slate-500">Thu ngân nhận cọc</dt>
+                                <dt className="text-slate-500">{t('myReservations.paymentMethod')}</dt>
                                 <dd className="mt-0.5 font-medium text-ink">
-                                  {bill.deposit_amount > 0 ? bill.deposit_confirmed_by_name || 'Chưa ghi nhận' : 'Không có cọc'}
+                                  {bill.payment_method ? t(`myReservations.paymentMethods.${bill.payment_method}`, { defaultValue: bill.payment_method }) : '—'}
                                 </dd>
                               </div>
                               <div>
-                                <dt className="text-slate-500">Mã giao dịch</dt>
+                                <dt className="text-slate-500">{t('myReservations.cashierPaid')}</dt>
+                                <dd className="mt-0.5 font-medium text-ink">{bill.cashier_name || t('myReservations.notRecorded')}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">{t('myReservations.cashierDeposit')}</dt>
+                                <dd className="mt-0.5 font-medium text-ink">
+                                  {bill.deposit_amount > 0 ? bill.deposit_confirmed_by_name || t('myReservations.notRecorded') : t('myReservations.noDeposit')}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-500">{t('myReservations.transactionCode')}</dt>
                                 <dd className="mt-0.5 break-all font-medium text-ink">{bill.payment_code || '—'}</dd>
                               </div>
                             </dl>
@@ -329,26 +349,26 @@ export default function MyReservationsPage() {
                               <table className="w-full min-w-[440px] text-xs">
                                 <thead className="bg-slate-50 text-left font-medium text-slate-500">
                                   <tr>
-                                    <th className="px-3 py-2">Món</th>
-                                    <th className="px-3 py-2 text-right">SL</th>
-                                    <th className="px-3 py-2 text-right">Đơn giá</th>
-                                    <th className="px-3 py-2 text-right">Thành tiền</th>
+                                    <th className="px-3 py-2">{t('myReservations.dish')}</th>
+                                    <th className="px-3 py-2 text-right">{t('myReservations.quantity')}</th>
+                                    <th className="px-3 py-2 text-right">{t('myReservations.unitPrice')}</th>
+                                    <th className="px-3 py-2 text-right">{t('myReservations.lineTotal')}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {bill.items.map((item) => (
                                     <tr key={item.id} className="border-t border-slate-100">
                                       <td className="px-3 py-2 text-ink">
-                                        <span className="font-medium">{item.dish_name || `Món #${item.dish_id}`}</span>
+                                        <span className="font-medium">{item.dish_name || t('myReservations.dishFallback', { id: item.dish_id })}</span>
                                         {item.note && <span className="mt-0.5 block text-slate-500">{item.note}</span>}
                                         {item.accepted_by_name && (
                                           <span className="mt-0.5 block text-slate-500">
-                                            Người nhận món: {item.accepted_by_name}
+                                            {t('myReservations.acceptedBy')}: {item.accepted_by_name}
                                           </span>
                                         )}
                                         {item.review_sentiment && (
                                           <span className="mt-0.5 block text-slate-500">
-                                            Bạn đã {item.review_sentiment === 'like' ? 'thích' : 'không thích'} món này
+                                            {t(item.review_sentiment === 'like' ? 'myReservations.youLiked' : 'myReservations.youDisliked')}
                                           </span>
                                         )}
                                       </td>
@@ -360,7 +380,7 @@ export default function MyReservationsPage() {
                                   {bill.items.length === 0 && (
                                     <tr>
                                       <td colSpan={4} className="px-3 py-3 text-center text-slate-500">
-                                        Bill này không có chi tiết món.
+                                        {t('myReservations.billNoItems')}
                                       </td>
                                     </tr>
                                   )}
@@ -369,34 +389,38 @@ export default function MyReservationsPage() {
                             </div>
                             <dl className="ml-auto mt-3 max-w-xs space-y-1.5 border-t border-slate-200 pt-3 text-xs">
                               <div className="flex justify-between gap-3 text-slate-600">
-                                <dt>Tổng bill</dt><dd>{money(bill.total_amount)}</dd>
+                                <dt>{t('myReservations.billTotal')}</dt><dd>{money(bill.total_amount)}</dd>
                               </div>
                               <div className="flex justify-between gap-3 text-slate-600">
-                                <dt>Đã trừ cọc</dt><dd>−{money(bill.deposit_amount)}</dd>
+                                <dt>{t('myReservations.depositDeducted')}</dt><dd>−{money(bill.deposit_amount)}</dd>
                               </div>
                               <div className="flex justify-between gap-3 font-semibold text-ink">
-                                <dt>Thực thu</dt><dd>{money(bill.amount_paid)}</dd>
+                                <dt>{t('myReservations.amountPaid')}</dt><dd>{money(bill.amount_paid)}</dd>
                               </div>
                             </dl>
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
                               {bill.review ? (
                                 <div className="text-sm text-slate-600">
-                                  <p className="flex items-center gap-1 text-amber-600" aria-label={`${bill.review.rating} trên 5 sao`}>
+                                  <p className="flex items-center gap-1 text-amber-600" aria-label={t('myReservations.ratingLabel', { count: bill.review.rating })}>
                                     {Array.from({ length: 5 }, (_, index) => (
                                       <Star key={index} size={15} fill={index < bill.review.rating ? 'currentColor' : 'none'} />
                                     ))}
                                     <span className="ml-1 text-xs text-slate-500">{bill.review.rating}/5</span>
                                   </p>
                                   <p className="mt-1 text-xs text-slate-500">
-                                    Món ăn {bill.review.food_rating || '—'}/5 · Phục vụ {bill.review.service_rating || '—'}/5 · Không gian {bill.review.ambience_rating || '—'}/5
+                                    {t('myReservations.reviewBreakdown', {
+                                      food: bill.review.food_rating || '—',
+                                      service: bill.review.service_rating || '—',
+                                      ambience: bill.review.ambience_rating || '—',
+                                    })}
                                   </p>
                                   <p className="mt-1 line-clamp-2">{bill.review.comment}</p>
                                 </div>
                               ) : (
-                                <p className="text-sm text-slate-500">Chưa đánh giá bill này</p>
+                                <p className="text-sm text-slate-500">{t('myReservations.noBillReview')}</p>
                               )}
                               <button type="button" className="btn-secondary" onClick={() => openBillReview(bill)}>
-                                {bill.review ? 'Sửa đánh giá' : 'Đánh giá bill'}
+                                {t(bill.review ? 'myReservations.editReview' : 'myReservations.reviewBill')}
                               </button>
                             </div>
                           </div>
@@ -407,44 +431,44 @@ export default function MyReservationsPage() {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <span className={`rounded-full px-3 py-1 text-xs font-medium ${isNoShow ? STATUS_CONFIG.qua_han.badge : cfg.badge}`}>
-                    {isNoShow ? 'Khách không đến (no-show)' : cfg.label}
+                    {isNoShow ? t('myReservations.noShow') : t(`myReservations.statuses.${cfg.key}`)}
                   </span>
                   {r.status === 'da_huy' && (
                     <div className="max-w-xs text-right text-xs text-slate-500">
-                      <p>Hủy bởi: {CANCELLER_LABELS[r.cancelled_by] || 'Hệ thống'}</p>
-                      <p>Hủy lúc: {formatDateTime(r.cancelled_at)}</p>
+                      <p>{t('myReservations.cancelledBy')}: {t(`myReservations.${r.cancelled_by === 'customer' ? 'you' : r.cancelled_by === 'staff' ? 'staff' : 'system'}`)}</p>
+                      <p>{t('myReservations.cancelledAt')}: {formatDateTime(r.cancelled_at, locale)}</p>
                     </div>
                   )}
                   {r.deposit_status === 'da_hoan' && (
                     <span className="text-xs text-emerald-700">
-                      Đã hoàn cọc {money(r.deposit_amount)}
-                      {r.refunded_at ? ` lúc ${formatDateTime(r.refunded_at)}` : ''}
+                      {t('myReservations.refunded', { amount: money(r.deposit_amount) })}
+                      {r.refunded_at ? ` ${t('myReservations.atTime', { time: formatDateTime(r.refunded_at, locale) })}` : ''}
                     </span>
                   )}
                   {r.deposit_status === 'mat_coc' && (
                     <span className="max-w-xs text-right text-xs text-clay-600">
                       {isNoShow
-                        ? `Không hoàn cọc — mất cọc ${money(r.deposit_amount)} do khách không đến`
-                        : `Không hoàn cọc — đã mất cọc ${money(r.deposit_amount)}`}
-                      {r.forfeited_at ? ` lúc ${formatDateTime(r.forfeited_at)}` : ''}
+                        ? t('myReservations.forfeitedNoShow', { amount: money(r.deposit_amount) })
+                        : t('myReservations.forfeited', { amount: money(r.deposit_amount) })}
+                      {r.forfeited_at ? ` ${t('myReservations.atTime', { time: formatDateTime(r.forfeited_at, locale) })}` : ''}
                     </span>
                   )}
                   {r.status === 'da_huy' && r.deposit_status === 'dang_hoan' && (
                     <span className="max-w-xs text-right text-xs text-amber-700">
-                      Đơn đủ điều kiện hoàn cọc {money(r.deposit_amount)}; đang chờ quản lý xử lý
+                      {t('myReservations.refundPending', { amount: money(r.deposit_amount) })}
                     </span>
                   )}
                   {r.status === 'da_huy' && r.deposit_status === 'da_huy' && (
                     <span className="max-w-xs text-right text-xs text-slate-500">
-                      Không phát sinh hoàn cọc — lượt giữ chưa thanh toán
+                      {t('myReservations.unpaidHoldCancelled')}
                     </span>
                   )}
                   {r.status === 'da_huy' && !r.deposit_status && (
-                    <span className="max-w-xs text-right text-xs text-slate-500">Không có khoản cọc cần hoàn</span>
+                    <span className="max-w-xs text-right text-xs text-slate-500">{t('myReservations.noRefundNeeded')}</span>
                   )}
                   {r.deposit_status === 'hoan_that_bai' && (
                     <span className="max-w-xs text-right text-xs text-red-700">
-                      Hoàn cọc chưa thành công; vui lòng liên hệ quán
+                      {t('myReservations.refundFailed')}
                     </span>
                   )}
                   {['giu_tam', 'da_dat'].includes(r.status) && !Number(r.preorder_prepared) && (
@@ -455,12 +479,12 @@ export default function MyReservationsPage() {
                       className="btn-secondary text-clay-600"
                     >
                       {cancellingId === r.id ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
-                      Hủy đặt bàn
+                      {t('myReservations.cancelReservation')}
                     </button>
                   )}
                   {['giu_tam', 'da_dat'].includes(r.status) && Number(r.preorder_prepared) > 0 && (
                     <span className="max-w-48 text-right text-xs text-slate-500">
-                      Không thể hủy vì món đã được đưa vào bill/bếp
+                      {t('myReservations.cannotCancelPreorder')}
                     </span>
                   )}
                 </div>
@@ -471,48 +495,84 @@ export default function MyReservationsPage() {
       )}
 
       {cancelTarget && (
-        <Modal title={`Yêu cầu hoàn cọc #${cancelTarget.id}`} onClose={() => setCancelTarget(null)}>
+        <Modal title={t('myReservations.refundRequest', { id: cancelTarget.id })} onClose={() => setCancelTarget(null)}>
           <form
             className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
+              if (!refundDetails.refund_bank_account_id) {
+                setCancelError(t('myReservations.selectRefundAccount'));
+                return;
+              }
               cancelReservation(cancelTarget, refundDetails);
             }}
           >
             <p className="text-sm text-slate-600">
-              Đơn đủ điều kiện hoàn 100% cọc. Nhập thông tin tài khoản nhận tiền.
+              {t('myReservations.refundInstructions')}
             </p>
-            <label className="block">
-              <span className="field-label">Ngân hàng</span>
-              <input
-                required maxLength={20} className="field-input"
-                value={refundDetails.refund_bank_code}
-                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_bank_code: event.target.value }))}
-                placeholder="Ví dụ: Vietcombank"
-              />
-            </label>
-            <label className="block">
-              <span className="field-label">Số tài khoản</span>
-              <input
-                required maxLength={50} className="field-input"
-                value={refundDetails.refund_account_number}
-                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_account_number: event.target.value }))}
-              />
-            </label>
-            <label className="block">
-              <span className="field-label">Tên chủ tài khoản</span>
-              <input
-                required maxLength={100} className="field-input"
-                value={refundDetails.refund_account_name}
-                onChange={(event) => setRefundDetails((value) => ({ ...value, refund_account_name: event.target.value }))}
-              />
-            </label>
+            {loadingRefundBankAccounts ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="animate-spin text-slate-400" size={20} />
+              </div>
+            ) : refundBankAccounts.length > 0 ? (
+              <fieldset className="space-y-2">
+                <legend className="field-label">{t('myReservations.chooseRefundAccount')}</legend>
+                {refundBankAccounts.map((account) => (
+                  <label
+                    key={account.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${
+                      refundDetails.refund_bank_account_id === String(account.id)
+                        ? 'border-basil-400 bg-basil-50'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="refund_bank_account_id"
+                      required
+                      value={account.id}
+                      checked={refundDetails.refund_bank_account_id === String(account.id)}
+                      onChange={(event) => setRefundDetails({ refund_bank_account_id: event.target.value })}
+                      className="mt-1 text-basil-600 focus:ring-basil-500"
+                    />
+                    <span className="min-w-0 text-sm">
+                      <span className="block font-medium text-ink">
+                        {account.bank_code}
+                        {Boolean(account.is_default) && (
+                          <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-basil-700">
+                            {t('myReservations.defaultRefundAccount')}
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-1 block text-slate-600">
+                        {account.account_number} · {account.account_name}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                <p>{t('myReservations.noRefundAccounts')}</p>
+                <Link
+                  to="/profile"
+                  onClick={() => setCancelTarget(null)}
+                  className="mt-2 inline-flex font-medium text-basil-700 hover:text-basil-800"
+                >
+                  {t('myReservations.addRefundAccount')}
+                </Link>
+              </div>
+            )}
             {cancelError && <Alert type="error">{cancelError}</Alert>}
             <div className="flex justify-end gap-2">
-              <button type="button" className="btn-secondary" onClick={() => setCancelTarget(null)}>Đóng</button>
-              <button type="submit" disabled={cancellingId === cancelTarget.id} className="btn-primary">
+              <button type="button" className="btn-secondary" onClick={() => setCancelTarget(null)}>{t('myReservations.close')}</button>
+              <button
+                type="submit"
+                disabled={loadingRefundBankAccounts || refundBankAccounts.length === 0 || cancellingId === cancelTarget.id}
+                className="btn-primary"
+              >
                 {cancellingId === cancelTarget.id && <Loader2 size={15} className="animate-spin" />}
-                Hủy và gửi yêu cầu hoàn
+                {t('myReservations.cancelAndRefund')}
               </button>
             </div>
           </form>
@@ -520,7 +580,10 @@ export default function MyReservationsPage() {
       )}
       {reviewTarget && (
         <Modal
-          title={`${reviewTarget.review ? 'Sửa đánh giá' : 'Đánh giá'} bill #${reviewTarget.id}`}
+          title={t('myReservations.reviewTitle', {
+            action: t(reviewTarget.review ? 'myReservations.editReview' : 'myReservations.reviewBill'),
+            id: reviewTarget.id,
+          })}
           onClose={() => {
             if (!savingReview) setReviewTarget(null);
           }}
@@ -528,8 +591,8 @@ export default function MyReservationsPage() {
         >
           <form className="space-y-5" onSubmit={submitBillReview}>
             <fieldset>
-              <legend className="mb-2 text-sm font-medium text-ink">Đánh giá tổng thể bill</legend>
-              <div className="flex gap-1" role="radiogroup" aria-label="Đánh giá từ 1 đến 5 sao">
+              <legend className="mb-2 text-sm font-medium text-ink">{t('myReservations.reviewOverall')}</legend>
+              <div className="flex gap-1" role="radiogroup" aria-label={t('myReservations.ratingRange')}>
                 {Array.from({ length: 5 }, (_, index) => {
                   const rating = index + 1;
                   return (
@@ -538,7 +601,7 @@ export default function MyReservationsPage() {
                       type="button"
                       role="radio"
                       aria-checked={reviewForm.rating === rating}
-                      aria-label={`${rating} sao`}
+                      aria-label={t('myReservations.stars', { count: rating })}
                       onClick={() => setReviewForm((current) => ({ ...current, rating }))}
                       className="rounded p-1 text-amber-500 hover:bg-amber-50"
                     >
@@ -547,17 +610,17 @@ export default function MyReservationsPage() {
                   );
                 })}
                 <span className="self-center text-sm text-slate-500">
-                  {reviewForm.rating ? `${reviewForm.rating}/5` : 'Chọn số sao'}
+                  {reviewForm.rating ? `${reviewForm.rating}/5` : t('myReservations.chooseRating')}
                 </span>
               </div>
             </fieldset>
 
             <fieldset className="space-y-3">
-              <legend className="mb-2 text-sm font-medium text-ink">Đánh giá theo từng khía cạnh</legend>
+              <legend className="mb-2 text-sm font-medium text-ink">{t('myReservations.reviewAspects')}</legend>
               {[
-                ['food_rating', 'Món ăn'],
-                ['service_rating', 'Phục vụ'],
-                ['ambience_rating', 'Không gian'],
+                ['food_rating', t('myReservations.food')],
+                ['service_rating', t('myReservations.service')],
+                ['ambience_rating', t('myReservations.ambience')],
               ].map(([key, label]) => (
                 <div key={key} className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm text-slate-700">{label}</span>
@@ -586,11 +649,11 @@ export default function MyReservationsPage() {
             </fieldset>
 
             <fieldset className="space-y-3">
-              <legend className="mb-2 text-sm font-medium text-ink">Bạn cảm nhận thế nào về từng món?</legend>
+              <legend className="mb-2 text-sm font-medium text-ink">{t('myReservations.reviewEachDish')}</legend>
               {reviewTarget.items.map((item) => (
                 <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
                   <span className="text-sm font-medium text-ink">
-                    {item.dish_name || `Món #${item.dish_id}`} × {item.quantity}
+                    {item.dish_name || t('myReservations.dishFallback', { id: item.dish_id })} × {item.quantity}
                   </span>
                   <div className="flex gap-2">
                     <button
@@ -606,7 +669,7 @@ export default function MyReservationsPage() {
                           : 'border-slate-200 text-slate-600'
                       }`}
                     >
-                      <ThumbsUp size={15} /> Thích
+                      <ThumbsUp size={15} /> {t('myReservations.like')}
                     </button>
                     <button
                       type="button"
@@ -621,7 +684,7 @@ export default function MyReservationsPage() {
                           : 'border-slate-200 text-slate-600'
                       }`}
                     >
-                      <ThumbsDown size={15} /> Không thích
+                      <ThumbsDown size={15} /> {t('myReservations.dislike')}
                     </button>
                   </div>
                 </div>
@@ -629,7 +692,7 @@ export default function MyReservationsPage() {
             </fieldset>
 
             <label className="block">
-              <span className="field-label">Bình luận</span>
+              <span className="field-label">{t('myReservations.comment')}</span>
               <textarea
                 required
                 minLength={1}
@@ -638,7 +701,7 @@ export default function MyReservationsPage() {
                 className="field-input"
                 value={reviewForm.comment}
                 onChange={(event) => setReviewForm((current) => ({ ...current, comment: event.target.value }))}
-                placeholder="Chia sẻ trải nghiệm của bạn về bill..."
+                placeholder={t('myReservations.commentPlaceholder')}
               />
               <span className="mt-1 block text-right text-xs text-slate-400">{reviewForm.comment.length}/2000</span>
             </label>
@@ -650,11 +713,11 @@ export default function MyReservationsPage() {
                 disabled={savingReview}
                 onClick={() => setReviewTarget(null)}
               >
-                Đóng
+                {t('myReservations.close')}
               </button>
               <button type="submit" className="btn-primary" disabled={savingReview}>
                 {savingReview && <Loader2 size={15} className="animate-spin" />}
-                {reviewTarget.review ? 'Lưu chỉnh sửa' : 'Gửi đánh giá'}
+                {t(reviewTarget.review ? 'myReservations.saveChanges' : 'myReservations.sendReview')}
               </button>
             </div>
           </form>

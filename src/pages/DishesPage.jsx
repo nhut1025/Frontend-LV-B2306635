@@ -13,6 +13,8 @@ import { reservationsApi } from '../api/reservations';
 import { settingsApi } from '../api/settings';
 import { getErrorMessage } from '../api/client';
 import DishRecommendations from '../components/DishRecommendations';
+import { useCustomerTranslation } from '../i18n/useCustomerTranslation';
+import { formatCurrency, formatDateTime } from '../i18n/formatters';
 
 const emptyForm = { name: '', description: '', price: '', category_id: '', image_urls: [], ingredients: [], tags: [] };
 
@@ -60,6 +62,7 @@ export default function DishesPage() {
   const isManager = user?.role === 'manager';
   const canToggleAvailability = ['manager', 'phuc_vu', 'kitchen'].includes(user?.role);
   const isCustomerFacing = !user || user.role === 'customer';
+  const { t, locale } = useCustomerTranslation(isCustomerFacing);
 
   const [dishes, setDishes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
@@ -95,9 +98,9 @@ export default function DishesPage() {
       dishes: dishes.filter((dish) => String(dish.category_id) === String(category.id)),
     }));
     const uncategorized = dishes.filter((dish) => !dish.category_id);
-    if (uncategorized.length) groups.push({ id: 'uncategorized', name: 'Chưa phân loại', dishes: uncategorized });
+    if (uncategorized.length) groups.push({ id: 'uncategorized', name: t('dishes.uncategorized'), dishes: uncategorized });
     return groups;
-  }, [categories, dishes]);
+  }, [categories, dishes, t]);
   const selectedGroup = categoryId === 'uncategorized'
     ? groupedDishes.find((group) => group.id === 'uncategorized')
     : groupedDishes.find((group) => group.id === String(categoryId));
@@ -119,9 +122,9 @@ export default function DishesPage() {
       .sort((first, second) => {
         if (sortOrder === 'price-asc') return Number(first.price) - Number(second.price);
         if (sortOrder === 'price-desc') return Number(second.price) - Number(first.price);
-        return first.name.localeCompare(second.name, 'vi');
+        return first.name.localeCompare(second.name, locale);
       });
-  }, [availableOnly, searchTerm, sortOrder, visibleDishes]);
+  }, [availableOnly, locale, searchTerm, sortOrder, visibleDishes]);
 
   async function loadAll() {
     setLoading(true);
@@ -199,7 +202,7 @@ export default function DishesPage() {
     try {
       const response = await dishesApi.getById(dish.id);
       const fullDish = response.data?.dish;
-      if (!fullDish) throw new Error('Không tải được thông tin món ăn.');
+      if (!fullDish) throw new Error(t('dishes.dishLoadError'));
 
       setEditingDish(fullDish);
       setForm({
@@ -261,15 +264,15 @@ export default function DishesPage() {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     if (form.image_urls.length + files.length > 10) {
-      setDishFormError('Mỗi món chỉ được có tối đa 10 hình ảnh.');
+      setDishFormError(t('dishes.maxImagesError'));
       e.target.value = '';
       return;
     }
     const invalidFile = files.find((file) => !file.type.startsWith('image/') || file.size > 20 * 1024 * 1024);
     if (invalidFile) {
       setDishFormError(!invalidFile.type.startsWith('image/')
-        ? 'Vui lòng chọn file hình ảnh hợp lệ.'
-        : `Ảnh "${invalidFile.name}" vượt quá giới hạn 20 MB.`);
+        ? t('dishes.invalidImageError')
+        : t('dishes.imageTooLargeError', { name: invalidFile.name }));
       e.target.value = '';
       return;
     }
@@ -299,14 +302,14 @@ export default function DishesPage() {
     const url = imageUrlDraft.trim();
     if (!url) return;
     if (form.image_urls.length >= 10) {
-      setDishFormError('Mỗi món chỉ được có tối đa 10 hình ảnh.');
+      setDishFormError(t('dishes.maxImagesError'));
       return;
     }
     try {
       const parsedUrl = new URL(url);
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('Unsupported URL protocol');
     } catch {
-      setDishFormError('URL hình ảnh không hợp lệ.');
+      setDishFormError(t('dishes.invalidImageUrlError'));
       return;
     }
     setDishFormError('');
@@ -356,7 +359,7 @@ export default function DishesPage() {
   }
 
   async function handleDeleteDish(dish) {
-    if (!confirm(`Xoá món "${dish.name}"?`)) return;
+    if (!confirm(t('dishes.deleteDishConfirm', { name: dish.name }))) return;
     try {
       await dishesApi.remove(dish.id);
       await loadAll();
@@ -386,17 +389,17 @@ export default function DishesPage() {
               type="search"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Tìm món không dấu theo tên, danh mục..."
-              aria-label="Tìm món theo tên, danh mục hoặc mô tả"
+              placeholder={t('dishes.searchPlaceholder')}
+              aria-label={t('dishes.searchLabel')}
               className="field-input pl-10"
             />
           </label>
           <label>
-            <span className="sr-only">Sắp xếp món ăn</span>
+            <span className="sr-only">{t('dishes.sortLabel')}</span>
             <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="field-input">
-              <option value="name">Sắp xếp: Tên món</option>
-              <option value="price-asc">Giá: Thấp đến cao</option>
-              <option value="price-desc">Giá: Cao đến thấp</option>
+              <option value="name">{t('dishes.sortName')}</option>
+              <option value="price-asc">{t('dishes.sortPriceLow')}</option>
+              <option value="price-desc">{t('dishes.sortPriceHigh')}</option>
             </select>
           </label>
           <label className="flex cursor-pointer items-center gap-2 px-1 text-sm font-medium text-slate-600">
@@ -406,11 +409,11 @@ export default function DishesPage() {
               onChange={(event) => setAvailableOnly(event.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-basil-600 focus:ring-basil-500"
             />
-            Chỉ món còn hàng
+            {t('dishes.availableOnly')}
           </label>
         </div>
 
-        <nav aria-label="Danh mục món ăn" className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-3">
+        <nav aria-label={t('dishes.categories')} className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-3">
           <Link
             to="/dishes"
             aria-current={!categoryId ? 'page' : undefined}
@@ -418,7 +421,7 @@ export default function DishesPage() {
               !categoryId ? 'bg-basil-600 text-white' : 'bg-white text-slate-600 hover:bg-basil-50 hover:text-basil-700'
             }`}
           >
-            Tất cả món <span className="ml-1 opacity-75">{dishes.length}</span>
+            {t('dishes.all')} <span className="ml-1 opacity-75">{dishes.length}</span>
           </Link>
           {groupedDishes.filter((group) => group.dishes.length > 0).map((group) => {
             const active = String(categoryId) === group.id;
@@ -441,37 +444,37 @@ export default function DishesPage() {
       {isCustomerFacing && (
         <section className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-basil-700 via-basil-600 to-emerald-800 px-6 py-8 text-white shadow-sm sm:flex-row sm:items-center sm:px-9 sm:py-10">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-basil-100">Quán Ăn Minh Nhựt</p>
-            <h1 className="mt-2 font-display text-3xl font-semibold sm:text-4xl">Món ngon, sẵn sàng chờ bạn</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-basil-100">{t('dishes.brand')}</p>
+            <h1 className="mt-2 font-display text-3xl font-semibold sm:text-4xl">{t('dishes.heroTitle')}</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-basil-50">
-              Khám phá thực đơn nhà làm trong không gian ấm cúng. Mở cửa hằng ngày từ {reservationRules.reservation_open_time} đến {reservationRules.reservation_close_time}.
+              {t('dishes.heroDescription', { open: reservationRules.reservation_open_time, close: reservationRules.reservation_close_time })}
             </p>
           </div>
           <Link to="/tables" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-basil-700 transition hover:bg-basil-50">
-            <CalendarDays size={17} /> Đặt bàn ngay
+            <CalendarDays size={17} /> {t('dishes.bookNow')}
           </Link>
         </section>
       )}
 
       {user?.role === 'customer' && upcomingReservationError && (
-        <Alert type="error">Không tải được lịch đặt bàn sắp tới: {upcomingReservationError}</Alert>
+        <Alert type="error">{t('dishes.upcomingLoadError')}: {upcomingReservationError}</Alert>
       )}
       {user?.role === 'customer' && upcomingReservation && (
         <section className="rounded-2xl border border-basil-100 bg-basil-50 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-basil-700">Lịch đặt bàn sắp tới</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-basil-700">{t('dishes.upcomingReservation')}</p>
             <p className="mt-1 font-semibold text-ink">
-              {upcomingReservation.startsAt.toLocaleDateString('vi-VN')} lúc {upcomingReservation.startsAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+              {formatDateTime(upcomingReservation.startsAt, locale)}
               <span className="mx-2 text-slate-400">·</span>
-              {upcomingReservation.party_size} khách
-              {upcomingReservation.table_ids && <span className="ml-2">· Bàn {upcomingReservation.table_ids}</span>}
+              {t('dishes.guestCount', { count: upcomingReservation.party_size })}
+              {upcomingReservation.table_ids && <span className="ml-2">· {t('dishes.tableNumber', { number: upcomingReservation.table_ids })}</span>}
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              {upcomingReservation.status === 'da_dat' ? 'Đã đặt, đã xác nhận cọc' : 'Đang giữ bàn, vui lòng hoàn tất cọc đúng hạn'}
+              {t(upcomingReservation.status === 'da_dat' ? 'dishes.upcomingConfirmed' : 'dishes.upcomingHeld')}
             </p>
           </div>
           <Link to="/my-reservations" className="mt-3 inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-basil-700 hover:text-basil-800 sm:mt-0">
-            Xem lịch sử đặt bàn
+            {t('dishes.viewReservationHistory')}
           </Link>
         </section>
       )}
@@ -483,16 +486,16 @@ export default function DishesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-2xl font-semibold text-ink">
-            {categoryId && !selectedGroup ? 'Danh mục không tồn tại' : selectedGroup?.name || 'Thực đơn'}
+            {categoryId && !selectedGroup ? t('dishes.unknownCategory') : selectedGroup?.name || t('dishes.menu')}
           </h2>
           <p className="text-sm text-slate-500">
-            {categoryId ? `${filteredDishes.length} món trong danh mục` : `${filteredDishes.length} món trong thực đơn`}
+            {t(categoryId ? 'dishes.dishesInCategory' : 'dishes.dishesInMenu', { count: filteredDishes.length })}
           </p>
         </div>
         {isManager && (
           <button onClick={openCreateModal} className="btn-primary">
             <Plus size={16} />
-            Thêm món
+            {t('dishes.addDish')}
           </button>
         )}
       </div>
@@ -504,15 +507,15 @@ export default function DishesPage() {
           <Loader2 className="animate-spin text-slate-400" size={24} />
         </div>
       ) : categoryId && !selectedGroup ? (
-        <div className="card text-center text-sm text-slate-500">Danh mục này không tồn tại.</div>
+        <div className="card text-center text-sm text-slate-500">{t('dishes.categoryNotFound')}</div>
       ) : filteredDishes.length === 0 ? (
         <div className="card text-center text-sm text-slate-500">
           {searchTerm || availableOnly
-            ? 'Không tìm thấy món phù hợp với bộ lọc hiện tại.'
-            : categoryId ? 'Danh mục này chưa có món ăn nào.' : 'Chưa có món ăn nào.'}
+            ? t('dishes.noMatchingDishes')
+            : categoryId ? t('dishes.categoryEmpty') : t('dishes.menuEmpty')}
           {isManager && categories.length === 0 && (
             <p className="mt-2">
-              <Link to="/categories" className="font-medium text-basil-600 hover:text-basil-700">Tạo danh mục món ăn</Link>
+              <Link to="/categories" className="font-medium text-basil-600 hover:text-basil-700">{t('dishes.createCategory')}</Link>
             </p>
           )}
         </div>
@@ -531,25 +534,25 @@ export default function DishesPage() {
                       onError={(event) => { event.currentTarget.style.display = 'none'; }}
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-400">Chưa có hình ảnh</div>
+                    <div className="flex h-full items-center justify-center text-sm text-slate-400">{t('dishes.noImage')}</div>
                   )}
                   {!available && (
                     <span className="absolute left-0 top-4 -translate-x-1 rotate-[-35deg] bg-clay-600 px-8 py-1 text-xs font-bold uppercase tracking-wider text-white shadow">
-                      Hết hàng
+                      {t('dishes.outOfStock')}
                     </span>
                   )}
                 </div>
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-basil-700">
-                      {dish.category || 'Khác'}
+                      {dish.category || t('dishes.other')}
                     </p>
                     <h3 className="font-display text-base font-semibold text-ink">
                       <Link to={`/dishes/${dish.id}`} className="hover:text-basil-600">{dish.name}</Link>
                     </h3>
                   </div>
                   <p className="whitespace-nowrap font-mono text-sm font-semibold text-ink">
-                    {Number(dish.price).toLocaleString('vi-VN')}đ
+                    {formatCurrency(dish.price, locale)}
                   </p>
                 </div>
                 {dish.description && <p className="line-clamp-2 text-sm text-slate-500">{dish.description}</p>}
@@ -565,7 +568,7 @@ export default function DishesPage() {
 
                 <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
                   <Link to={`/dishes/${dish.id}`} className="inline-flex items-center rounded-full bg-basil-50 px-3.5 py-2 text-xs font-semibold text-basil-700 transition hover:bg-basil-100">
-                    Xem chi tiết
+                    {t('dishes.viewDetails')}
                   </Link>
                   {canToggleAvailability ? (
                     <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
@@ -575,11 +578,11 @@ export default function DishesPage() {
                         onChange={() => handleToggleAvailability(dish)}
                         className="h-4 w-4 rounded border-slate-300 text-basil-500 focus:ring-basil-500"
                       />
-                      {available ? 'Còn hàng' : 'Hết hàng'}
+                      {available ? t('dishes.available') : t('dishes.outOfStock')}
                     </label>
                   ) : (
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${available ? 'bg-basil-50 text-basil-700' : 'bg-clay-50 text-clay-600'}`}>
-                      {available ? 'Còn hàng' : 'Hết hàng'}
+                      {available ? t('dishes.available') : t('dishes.outOfStock')}
                     </span>
                   )}
 
@@ -589,7 +592,7 @@ export default function DishesPage() {
                         onClick={() => openEditModal(dish)}
                         disabled={loadingDishId !== null}
                         className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-basil-600"
-                        aria-label="Sửa"
+                        aria-label={t('dishes.edit')}
                       >
                         {loadingDishId === dish.id
                           ? <Loader2 size={15} className="animate-spin" />
@@ -598,7 +601,7 @@ export default function DishesPage() {
                       <button
                         onClick={() => handleDeleteDish(dish)}
                         className="rounded-full p-1.5 text-slate-400 hover:bg-clay-50 hover:text-clay-500"
-                        aria-label="Xoá"
+                        aria-label={t('dishes.delete')}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -617,25 +620,28 @@ export default function DishesPage() {
 
       {isCustomerFacing && (
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-          <h2 className="font-display text-xl font-semibold text-ink">Thông tin quán</h2>
+          <h2 className="font-display text-xl font-semibold text-ink">{t('dishes.restaurantInfo')}</h2>
           <div className="mt-4 grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
-            <p className="flex items-start gap-2"><MapPin size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Địa chỉ: Cần Thơ</span></p>
-            <p className="flex items-start gap-2"><Phone size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Điện thoại: <a href="tel:0942726775" className="font-medium text-basil-700 hover:underline">0942726775</a></span></p>
-            <p className="flex items-start gap-2"><Clock3 size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Giờ mở cửa: Hằng ngày, {reservationRules.reservation_open_time}–{reservationRules.reservation_close_time}</span></p>
-            <p className="flex items-start gap-2"><CalendarDays size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>Đặt bàn cần cọc 50.000đ; hoặc 50% bill nếu đặt món trước. Bàn được giữ trong {reservationRules.reservation_hold_minutes} phút để hoàn tất thanh toán.</span></p>
+            <p className="flex items-start gap-2"><MapPin size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>{t('dishes.address')}</span></p>
+            <p className="flex items-start gap-2"><Phone size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>{t('dishes.phoneLabel')} <a href="tel:0942726775" className="font-medium text-basil-700 hover:underline">0942726775</a></span></p>
+            <p className="flex items-start gap-2"><Clock3 size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>{t('dishes.openingHours', { open: reservationRules.reservation_open_time, close: reservationRules.reservation_close_time })}</span></p>
+            <p className="flex items-start gap-2"><CalendarDays size={17} className="mt-0.5 shrink-0 text-basil-600" /><span>{t('dishes.depositInfo', {
+              deposit: formatCurrency(50000, locale),
+              minutes: reservationRules.reservation_hold_minutes,
+            })}</span></p>
           </div>
           <Link to="/tables" className="mt-5 inline-flex items-center rounded-full bg-basil-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-basil-700">
-            Xem sơ đồ và đặt bàn
+            {t('dishes.viewTables')}
           </Link>
         </section>
       )}
 
       {showDishModal && (
-        <Modal title={editingDish ? 'Sửa món ăn' : 'Thêm món ăn'} onClose={() => setShowDishModal(false)}>
+        <Modal title={editingDish ? t('dishes.editDish') : t('dishes.createDish')} onClose={() => setShowDishModal(false)}>
           <form onSubmit={handleSaveDish} className="space-y-4">
             {dishFormError && <Alert type="error">{dishFormError}</Alert>}
             <div>
-              <label className="field-label">Tên món</label>
+              <label className="field-label">{t('dishes.name')}</label>
               <input
                 required
                 value={form.name}
@@ -646,7 +652,7 @@ export default function DishesPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="field-label">Giá (VNĐ)</label>
+                <label className="field-label">{t('dishes.price')}</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -657,7 +663,7 @@ export default function DishesPage() {
                 />
               </div>
               <div>
-                <label className="field-label" htmlFor="dish-category">Danh mục</label>
+                <label className="field-label" htmlFor="dish-category">{t('dishes.category')}</label>
                 <select
                   id="dish-category"
                   required
@@ -665,17 +671,17 @@ export default function DishesPage() {
                   onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
                   className="field-input"
                 >
-                  <option value="" disabled>Chọn danh mục</option>
+                  <option value="" disabled>{t('dishes.chooseCategory')}</option>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                 </select>
                 {categories.length === 0 && (
-                  <p className="mt-1 text-xs text-clay-600">Chưa có danh mục. Hãy tạo danh mục trước khi thêm món.</p>
+                  <p className="mt-1 text-xs text-clay-600">{t('dishes.noCategories')}</p>
                 )}
               </div>
             </div>
 
             <div>
-              <label className="field-label">Mô tả</label>
+              <label className="field-label">{t('dishes.description')}</label>
               <textarea
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -685,10 +691,10 @@ export default function DishesPage() {
             </div>
 
             <div>
-              <label className="field-label">Thẻ món ăn</label>
+              <label className="field-label">{t('dishes.tags')}</label>
               <div className="flex flex-wrap gap-2">
                 {dishTags.length === 0 ? (
-                  <p className="text-sm text-slate-500">Chưa có thẻ món ăn nào.</p>
+                  <p className="text-sm text-slate-500">{t('dishes.noTags')}</p>
                 ) : dishTags.map((tag) => {
                   const checked = form.tags.includes(Number(tag.id));
                   return (
@@ -712,7 +718,7 @@ export default function DishesPage() {
             </div>
 
             <div>
-              <label className="field-label" htmlFor="dish-image-url">Ảnh minh họa (tối đa 10 ảnh)</label>
+              <label className="field-label" htmlFor="dish-image-url">{t('dishes.images')}</label>
               <div className="flex gap-2">
                 <input
                   id="dish-image-url"
@@ -720,15 +726,15 @@ export default function DishesPage() {
                   value={imageUrlDraft}
                   onChange={(event) => setImageUrlDraft(event.target.value)}
                   className="field-input flex-1"
-                  placeholder="Thêm URL ảnh"
+                  placeholder={t('dishes.addImageUrl')}
                 />
                 <button type="button" onClick={addImageUrl} disabled={!imageUrlDraft.trim() || form.image_urls.length >= 10} className="btn-secondary px-3">
-                  <Plus size={16} /> URL
+                  <Plus size={16} /> {t('dishes.url')}
                 </button>
               </div>
               <label className={`btn-secondary mt-2 w-full cursor-pointer ${uploadingImage || form.image_urls.length >= 10 ? 'pointer-events-none opacity-60' : ''}`}>
                 {uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={16} />}
-                {uploadingImage ? 'Đang tải ảnh...' : 'Chọn nhiều ảnh từ máy'}
+                {uploadingImage ? t('dishes.uploadingImages') : t('dishes.chooseImages')}
                 <input
                   type="file"
                   accept="image/*"
@@ -738,23 +744,23 @@ export default function DishesPage() {
                   className="sr-only"
                 />
               </label>
-              <p className="mt-1 text-xs text-slate-500">Mỗi ảnh tối đa 20 MB. Ảnh đầu tiên được dùng làm ảnh đại diện.</p>
+              <p className="mt-1 text-xs text-slate-500">{t('dishes.imageRules')}</p>
               {form.image_urls.length > 0 && (
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {form.image_urls.map((url, index) => (
                     <div key={url} className="relative">
                       <img
                         src={url}
-                        alt={`${form.name || 'Món ăn'} — ảnh ${index + 1}`}
+                        alt={`${form.name || t('dishes.dish')} — ${t('dishes.imageNumber', { count: index + 1 })}`}
                         className="h-auto max-h-40 w-full rounded-xl bg-slate-50 object-contain"
                         onError={(event) => { event.currentTarget.style.opacity = '0.35'; }}
                       />
-                      {index === 0 && <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">Ảnh đại diện</span>}
+                      {index === 0 && <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">{t('dishes.primaryImage')}</span>}
                       <button
                         type="button"
                         onClick={() => removeImage(url)}
                         className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-clay-600 shadow hover:bg-white"
-                        aria-label={`Xóa ảnh ${index + 1}`}
+                        aria-label={t('dishes.removeImage', { count: index + 1 })}
                       >
                         <X size={14} />
                       </button>
@@ -765,23 +771,23 @@ export default function DishesPage() {
             </div>
 
             <div>
-              <label className="field-label">Nguyên liệu</label>
+              <label className="field-label">{t('dishes.ingredients')}</label>
               <p className="mb-2 text-xs text-slate-500">
-                Quản lý danh sách tại <Link to="/ingredients" className="font-medium text-basil-600 hover:text-basil-700">trang nguyên liệu</Link>.
+                {t('dishes.manageIngredients')} <Link to="/ingredients" className="font-medium text-basil-600 hover:text-basil-700">{t('dishes.ingredientPage')}</Link>.
               </p>
               <p className="mb-2 text-xs text-slate-500">
-                Định lượng cho 1 món, tính bằng gam. Nhập cho nguyên liệu chính; để trống nếu là gia vị.
+                {t('dishes.ingredientAmount')}
               </p>
               <input
                 value={ingredientSearch}
                 onChange={(e) => setIngredientSearch(e.target.value)}
-                placeholder="Tìm trong danh sách nguyên liệu"
+                placeholder={t('dishes.ingredientSearch')}
                 className="field-input mb-2"
               />
               <div className="max-h-36 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
                 {ingredients.filter((ing) => ing.name.toLocaleLowerCase().includes(ingredientSearch.trim().toLocaleLowerCase())).length === 0 && (
                   <p className="px-1 text-xs text-slate-400">
-                    {ingredients.length === 0 ? 'Chưa có nguyên liệu nào.' : 'Không tìm thấy nguyên liệu.'}
+                    {ingredients.length === 0 ? t('dishes.noIngredients') : t('dishes.noIngredientMatches')}
                   </p>
                 )}
                 {ingredients
@@ -810,8 +816,8 @@ export default function DishesPage() {
                               step="0.01"
                               value={selectedIngredient.quantity_g}
                               onChange={(event) => updateIngredientQuantity(ing.id, event.target.value)}
-                              placeholder="Gia vị"
-                              aria-label={`Định lượng ${ing.name} cho một món, tính bằng gam`}
+                              placeholder={t('dishes.seasoning')}
+                              aria-label={t('dishes.quantityGrams', { name: ing.name })}
                               className="field-input w-24 py-1 text-right"
                             />
                             <span className="text-xs text-slate-500">g</span>
@@ -825,10 +831,10 @@ export default function DishesPage() {
 
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setShowDishModal(false)} disabled={uploadingImage || saving} className="btn-secondary">
-                Huỷ
+                {t('dishes.cancel')}
               </button>
               <button type="submit" disabled={saving || uploadingImage || categories.length === 0} className="btn-primary">
-                {saving ? 'Đang lưu...' : uploadingImage ? 'Đang tải ảnh...' : 'Lưu'}
+                {saving ? t('dishes.saving') : uploadingImage ? t('dishes.uploadingImages') : t('dishes.save')}
               </button>
             </div>
           </form>

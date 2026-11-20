@@ -16,23 +16,25 @@ import { useAuth } from '../context/AuthContext';
 import { chatApi } from '../api/chat';
 import { createSocket } from '../api/socket';
 import { getErrorMessage } from '../api/client';
+import { useCustomerTranslation } from '../i18n/useCustomerTranslation';
 
-function formatTime(value) {
+function formatTime(value, locale) {
   if (!value) return '';
   const date = new Date(String(value).replace(' ', 'T'));
   return Number.isNaN(date.getTime())
     ? ''
-    : new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+    : new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
-function formatSize(bytes) {
+function formatSize(bytes, locale) {
   if (!bytes) return '';
+  const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   return bytes >= 1024 * 1024
-    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    ? `${numberFormat.format(bytes / (1024 * 1024))} MB`
+    : `${numberFormat.format(Math.max(1, Math.round(bytes / 1024)))} KB`;
 }
 
-function MessageAttachment({ message, onError }) {
+function MessageAttachment({ message, onError, t, locale }) {
   const [imageUrl, setImageUrl] = useState('');
   const isImage = message.attachment_mime?.startsWith('image/');
 
@@ -47,13 +49,13 @@ function MessageAttachment({ message, onError }) {
         else URL.revokeObjectURL(objectUrl);
       })
       .catch(() => {
-        if (active) onError('Không thể tải ảnh đính kèm.');
+        if (active) onError(t('chat.attachmentLoadError'));
       });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [isImage, message.id, onError]);
+  }, [isImage, message.id, onError, t]);
 
   async function download() {
     try {
@@ -92,14 +94,14 @@ function MessageAttachment({ message, onError }) {
       )}
       {isImage && imageUrl && (
         <button type="button" onClick={download} className="mt-1 flex items-center gap-1 text-xs text-basil-700">
-          <ArrowDownToLine size={13} /> Tải ảnh
+          <ArrowDownToLine size={13} /> {t('chat.downloadImage')}
         </button>
       )}
     </div>
   );
 }
 
-function ConversationMessage({ message, own, onAttachmentError }) {
+function ConversationMessage({ message, own, onAttachmentError, t, locale }) {
   return (
     <div className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 sm:max-w-[75%] ${
@@ -107,9 +109,9 @@ function ConversationMessage({ message, own, onAttachmentError }) {
       }`}>
         {!own && <p className="mb-1 text-xs font-semibold text-basil-700">{message.sender_name}</p>}
         {message.content && <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>}
-        <MessageAttachment message={message} onError={onAttachmentError} />
+        <MessageAttachment message={message} onError={onAttachmentError} t={t} locale={locale} />
         <p className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${own ? 'text-white/70' : 'text-slate-400'}`}>
-          {formatTime(message.created_at)}
+          {formatTime(message.created_at, locale)}
           {own && (message.is_read ? <CheckCheck size={12} /> : <Check size={12} />)}
         </p>
       </div>
@@ -120,6 +122,7 @@ function ConversationMessage({ message, own, onAttachmentError }) {
 export default function ChatPage() {
   const { user } = useAuth();
   const isCashier = user?.role === 'thu_ngan';
+  const { t, locale } = useCustomerTranslation(!isCashier);
   const [conversations, setConversations] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [activeConversation, setActiveConversation] = useState(null);
@@ -266,7 +269,7 @@ export default function ChatPage() {
   }
 
   async function closeConversation() {
-    if (!selectedId || !window.confirm('Đóng hội thoại này? Khách sẽ cần gửi tin mới để mở hội thoại khác.')) return;
+    if (!selectedId || !window.confirm(t('chat.closeConfirm'))) return;
     setError('');
     try {
       const response = await chatApi.close(selectedId);
@@ -289,10 +292,10 @@ export default function ChatPage() {
       <div className="flex h-[calc(100vh-7rem)] min-h-[480px] flex-col md:h-[calc(100vh-13rem)]">
         <div className="mb-4 shrink-0">
           <h1 className="font-display text-2xl font-semibold text-ink">
-            {isCashier ? 'Tin nhắn với khách' : 'Chat với quán'}
+            {t(isCashier ? 'chat.cashierTitle' : 'chat.customerTitle')}
           </h1>
           <p className="text-sm text-slate-500">
-            {isCashier ? 'Hộp thư chung dành cho thu ngân.' : 'Hỏi quán về món ăn, giờ mở cửa hoặc đặt bàn.'}
+            {t(isCashier ? 'chat.cashierDescription' : 'chat.customerDescription')}
           </p>
         </div>
 
@@ -308,13 +311,13 @@ export default function ChatPage() {
           }`}>
             <div className="border-b border-slate-100 px-4 py-3">
               <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-ink">{isCashier ? 'Hộp thư' : 'Lịch sử chat'}</h2>
+                <h2 className="font-semibold text-ink">{t(isCashier ? 'chat.inbox' : 'chat.history')}</h2>
                 {!isCashier && (
                   <button
                     type="button"
                     onClick={() => setNewChat(true)}
                     className="rounded-lg p-2 text-basil-700 hover:bg-basil-50"
-                    title="Bắt đầu hội thoại mới"
+                    title={t('chat.newConversation')}
                   >
                     <MessageCircle size={18} />
                   </button>
@@ -323,9 +326,9 @@ export default function ChatPage() {
               {isCashier && (
                 <div className="mt-3 flex gap-2 text-xs">
                   {[
-                    ['all', 'Tất cả'],
-                    ['new', 'Chưa nhận'],
-                    ['mine', 'Của tôi'],
+                    ['all', t('chat.filterAll')],
+                    ['new', t('chat.filterNew')],
+                    ['mine', t('chat.filterMine')],
                   ].map(([filter, label]) => (
                     <button
                       type="button"
@@ -346,7 +349,7 @@ export default function ChatPage() {
                 <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-slate-400" /></div>
               ) : visibleConversations.length === 0 ? (
                 <p className="px-4 py-10 text-center text-sm text-slate-500">
-                  {isCashier ? 'Chưa có hội thoại trong mục này.' : 'Bạn chưa có hội thoại nào. Hãy gửi tin nhắn để bắt đầu.'}
+                  {t(isCashier ? 'chat.emptyCashier' : 'chat.emptyCustomer')}
                 </p>
               ) : visibleConversations.map((conversation) => {
                 const ownedElsewhere = isCashier && conversation.staff_id
@@ -367,7 +370,7 @@ export default function ChatPage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-sm font-semibold text-ink">
-                            {isCashier ? conversation.customer_name : conversation.staff_name || 'Quán Ăn'}
+                            {isCashier ? conversation.customer_name : conversation.staff_name || t('chat.restaurant')}
                           </span>
                           {Number(conversation.unread_count) > 0 && (
                             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-clay-500 px-1.5 text-xs font-semibold text-white">
@@ -376,11 +379,13 @@ export default function ChatPage() {
                           )}
                         </div>
                         <p className="mt-1 truncate text-xs text-slate-500">
-                          {conversation.last_message || (conversation.last_attachment_filename ? 'Đã gửi tệp đính kèm' : 'Chưa có tin nhắn')}
+                          {conversation.last_message || (conversation.last_attachment_filename
+                            ? t('chat.attachmentSent')
+                            : t('chat.noMessages'))}
                         </p>
                         <p className="mt-1 text-[10px] text-slate-400">
-                          {conversation.status === 'closed' ? 'Đã đóng' : conversation.staff_name || 'Chưa có người nhận'}
-                          {' · '}{formatTime(conversation.last_message_at || conversation.created_at)}
+                          {conversation.status === 'closed' ? t('chat.closed') : conversation.staff_name || t('chat.unassigned')}
+                          {' · '}{formatTime(conversation.last_message_at || conversation.created_at, locale)}
                         </p>
                       </button>
                       {ownedElsewhere && (
@@ -390,7 +395,7 @@ export default function ChatPage() {
                           onClick={() => takeOver(conversation.id)}
                           className="shrink-0 rounded-lg bg-basil-50 px-2 py-1.5 text-xs font-medium text-basil-700 hover:bg-basil-100 disabled:opacity-50"
                         >
-                          {takingOver === conversation.id ? <Loader2 size={14} className="animate-spin" /> : 'Tiếp quản'}
+                          {takingOver === conversation.id ? <Loader2 size={14} className="animate-spin" /> : t('chat.takeOver')}
                         </button>
                       )}
                     </div>
@@ -410,7 +415,7 @@ export default function ChatPage() {
                     setNewChat(false);
                   }}
                   className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
-                  aria-label="Quay lại danh sách"
+                  aria-label={t('chat.backToList')}
                 >
                   <X size={18} />
                 </button>
@@ -418,17 +423,17 @@ export default function ChatPage() {
                   <h2 className="truncate font-semibold text-ink">
                     {isCashier
                       ? selectedConversation?.customer_name || activeConversation?.customer_name
-                      : activeConversation?.staff_name || selectedConversation?.staff_name || 'Quán Ăn'}
+                      : activeConversation?.staff_name || selectedConversation?.staff_name || t('chat.restaurant')}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    {activeConversation?.status === 'closed' ? 'Hội thoại đã đóng' : isCashier
-                      ? selectedConversation?.staff_name || 'Chưa có người nhận'
-                      : cashiersOnline === false ? 'Hiện không có thu ngân trực tuyến' : 'Đang hỗ trợ'}
+                    {activeConversation?.status === 'closed' ? t('chat.closedConversation') : isCashier
+                      ? selectedConversation?.staff_name || t('chat.unassigned')
+                      : cashiersOnline === false ? t('chat.cashierOffline') : t('chat.supporting')}
                   </p>
                 </div>
                 {isCashier && activeConversation?.status === 'open' && Number(activeConversation.staff_id) === Number(user.id) && (
                   <button type="button" onClick={closeConversation} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                    Đóng hội thoại
+                    {t('chat.closeConversation')}
                   </button>
                 )}
               </header>
@@ -438,25 +443,27 @@ export default function ChatPage() {
               <>
                 {cashiersOnline === false && !isCashier && activeConversation?.status === 'open' && (
                   <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-                    Hiện chưa có thu ngân trực tuyến. Quán sẽ trả lời bạn sớm nhất có thể.
+                    {t('chat.offlineConversation')}
                   </div>
                 )}
                 {activeConversation?.status === 'closed' && (
                   <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-600">
-                    Hội thoại đã đóng. Tin nhắn mới của bạn sẽ mở một hội thoại mới.
+                    {t('chat.closedNotice')}
                   </div>
                 )}
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 px-3 py-4 sm:px-5">
                   {loadingMessages ? (
                     <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-slate-400" /></div>
                   ) : messages.length === 0 ? (
-                    <div className="py-12 text-center text-sm text-slate-500">Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.</div>
+                    <div className="py-12 text-center text-sm text-slate-500">{t('chat.startMessage')}</div>
                   ) : messages.map((message) => (
                     <ConversationMessage
                       key={message.id}
                       message={message}
                       own={Number(message.sender_id) === Number(user.id)}
                       onAttachmentError={setAttachmentErrorMessage}
+                      t={t}
+                      locale={locale}
                     />
                   ))}
                   <div ref={bottomRef} />
@@ -464,12 +471,12 @@ export default function ChatPage() {
                 {attachmentError && (
                   <div className="flex items-center justify-between border-t border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">
                     {attachmentError}
-                    <button type="button" onClick={() => setAttachmentError('')} aria-label="Đóng lỗi"><X size={14} /></button>
+                    <button type="button" onClick={() => setAttachmentError('')} aria-label={t('chat.dismissError')}><X size={14} /></button>
                   </div>
                 )}
                 {composerDisabled ? (
                   <div className="border-t border-slate-100 px-4 py-4 text-center text-sm text-slate-500">
-                    {assignedToOther ? 'Hội thoại này đã được thu ngân khác nhận.' : 'Hội thoại đã đóng.'}
+                    {assignedToOther ? t('chat.assignedToOther') : t('chat.conversationClosed')}
                   </div>
                 ) : (
                   <form ref={formRef} onSubmit={sendMessage} className="shrink-0 border-t border-slate-100 px-3 py-3 sm:px-5">
@@ -477,14 +484,14 @@ export default function ChatPage() {
                       <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
                         <FileText size={14} />
                         <span className="max-w-[70%] truncate">{attachment.name}</span>
-                        <span className="text-slate-400">{formatSize(attachment.size)}</span>
-                        <button type="button" onClick={() => setAttachment(null)} aria-label="Bỏ tệp đính kèm">
+                        <span className="text-slate-400">{formatSize(attachment.size, locale)}</span>
+                        <button type="button" onClick={() => setAttachment(null)} aria-label={t('chat.removeAttachment')}>
                           <X size={14} />
                         </button>
                       </div>
                     )}
                     <div className="flex items-end gap-2">
-                      <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 hover:bg-slate-100" title="Đính kèm (tối đa 20 MB)">
+                      <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 hover:bg-slate-100" title={t('chat.attachWithLimit')}>
                         <Paperclip size={19} />
                         <input
                           type="file"
@@ -502,7 +509,7 @@ export default function ChatPage() {
                           onChange={(event) => setDraft(Array.from(event.target.value).slice(0, 1500).join(''))}
                           maxLength={3000}
                           rows={1}
-                          placeholder="Nhập tin nhắn..."
+                          placeholder={t('chat.messagePlaceholder')}
                           className="max-h-32 min-h-10 w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-basil-400 focus:ring-2 focus:ring-basil-100"
                         />
                         {Array.from(draft).length > 1350 && <p className="mt-0.5 text-right text-[10px] text-slate-400">{Array.from(draft).length}/1500</p>}
@@ -511,28 +518,28 @@ export default function ChatPage() {
                         type="submit"
                         disabled={sending || (!draft.trim() && !attachment)}
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-basil-600 text-white hover:bg-basil-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="Gửi tin nhắn"
+                        aria-label={t('chat.sendMessage')}
                       >
                         {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
                       </button>
                     </div>
-                    <p className="mt-1 pl-11 text-[10px] text-slate-400">Tệp ảnh, PDF, Word, Excel, CSV hoặc TXT · tối đa 20 MB</p>
+                    <p className="mt-1 pl-11 text-[10px] text-slate-400">{t('chat.allowedFiles')}</p>
                   </form>
                 )}
               </>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
                 <div className="mb-3 rounded-full bg-basil-50 p-4 text-basil-600"><MessageCircle size={28} /></div>
-                <p className="font-medium text-ink">{isCashier ? 'Chọn một hội thoại để xem tin nhắn' : 'Bạn cần hỗ trợ?'}</p>
+                <p className="font-medium text-ink">{t(isCashier ? 'chat.chooseConversation' : 'chat.needHelp')}</p>
                 <p className="mt-1 max-w-sm text-sm text-slate-500">
-                  {isCashier ? 'Các hội thoại mới sẽ xuất hiện tự động trong hộp thư.' : 'Gửi câu hỏi cho quán, chúng tôi sẽ phản hồi sớm nhất có thể.'}
+                  {t(isCashier ? 'chat.newConversationNotice' : 'chat.sendQuestion')}
                 </p>
                 {!isCashier && cashiersOnline === false && (
-                  <p className="mt-2 text-xs text-amber-700">Hiện chưa có nhân viên trực tuyến, quán sẽ trả lời bạn sớm nhất có thể ạ.</p>
+                  <p className="mt-2 text-xs text-amber-700">{t('chat.offlineNotice')}</p>
                 )}
                 {!isCashier && (
                   <form ref={formRef} onSubmit={sendMessage} className="mt-5 flex w-full max-w-lg items-end gap-2">
-                    <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 hover:bg-slate-100" title="Đính kèm">
+                    <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 hover:bg-slate-100" title={t('chat.attach')}>
                       <Paperclip size={19} />
                       <input
                         type="file"
@@ -547,7 +554,7 @@ export default function ChatPage() {
                         onChange={(event) => setDraft(Array.from(event.target.value).slice(0, 1500).join(''))}
                         maxLength={3000}
                         rows={1}
-                        placeholder="Nhập tin nhắn đầu tiên..."
+                        placeholder={t('chat.firstMessagePlaceholder')}
                         className="max-h-32 min-h-10 w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-basil-400"
                       />
                       {attachment && <p className="mt-1 truncate text-xs text-slate-500">{attachment.name}</p>}
@@ -556,7 +563,7 @@ export default function ChatPage() {
                       type="submit"
                       disabled={sending || (!draft.trim() && !attachment)}
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-basil-600 text-white hover:bg-basil-700 disabled:opacity-50"
-                      aria-label="Gửi tin nhắn"
+                      aria-label={t('chat.sendMessage')}
                     >
                       {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
                     </button>

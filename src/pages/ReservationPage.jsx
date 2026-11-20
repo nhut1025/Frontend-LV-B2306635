@@ -12,6 +12,8 @@ import { reservationsApi } from '../api/reservations';
 import { settingsApi } from '../api/settings';
 import { usersApi } from '../api/users';
 import { getErrorMessage } from '../api/client';
+import { useCustomerTranslation } from '../i18n/useCustomerTranslation';
+import { formatCurrency, formatDate } from '../i18n/formatters';
 import './ReservationPage.css';
 
 const TABLE_SLOTS = [
@@ -20,11 +22,11 @@ const TABLE_SLOTS = [
   { x: 30, y: 80 }, { x: 49, y: 80 }, { x: 69, y: 80 },
 ];
 const RESERVATION_MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
-const STATUS_LABEL = {
-  trong: 'Trống',
-  giu_tam: 'Giữ chỗ',
-  da_dat: 'Đã đặt',
-  co_khach: 'Đang có khách',
+const STATUS_TRANSLATION_KEY = {
+  trong: 'available',
+  giu_tam: 'held',
+  da_dat: 'booked',
+  co_khach: 'occupied',
 };
 const STATUS_CLASS = {
   trong: 'available',
@@ -205,12 +207,13 @@ function Chair({ angle, radius }) {
   return <span className="floor-chair" style={{ left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) rotate(${angle + 90}deg)` }} />;
 }
 
-function FloorTable({ table, position, highlighted, selected, dimmed, disabled, onSelect, preview }) {
+function FloorTable({ table, position, highlighted, selected, dimmed, disabled, onSelect, preview, t }) {
   const capacity = Math.max(1, Number(table.capacity) || 1);
   const seatCount = Math.min(8, Math.max(2, capacity));
   const shape = 'square';
   const status = preview ? 'available' : STATUS_CLASS[table.status] || 'available';
-  const label = STATUS_LABEL[table.status] || table.status || STATUS_LABEL.trong;
+  const statusKey = STATUS_TRANSLATION_KEY[table.status] || 'available';
+  const label = t(`reservation.floor.${statusKey}`);
 
   return (
     <button
@@ -219,26 +222,31 @@ function FloorTable({ table, position, highlighted, selected, dimmed, disabled, 
       className={`floor-table ${status}${highlighted ? ' is-highlighted' : ''}${selected ? ' is-selected' : ''}${dimmed ? ' is-dimmed' : ''}`}
       style={{ left: `${position.x}%`, top: `${position.y}%` }}
       onClick={() => onSelect(table)}
-      aria-label={preview ? `Bàn ${tableName(table)}, ${capacity} chỗ` : `Bàn ${tableName(table)}, ${capacity} chỗ, ${label}`}
+      aria-label={preview
+        ? t('reservation.floor.tableLabel', { name: tableName(table), count: capacity })
+        : t('reservation.floor.tableLabelWithStatus', { name: tableName(table), count: capacity, status: label })}
       aria-pressed={selected}
-      title={preview ? `Bàn ${tableName(table)} · ${capacity} khách` : `Bàn ${tableName(table)} · ${capacity} khách · ${label}`}
+      title={preview
+        ? t('reservation.floor.tableTitle', { name: tableName(table), count: capacity })
+        : t('reservation.floor.tableTitleWithStatus', { name: tableName(table), count: capacity, status: label })}
     >
       {Array.from({ length: seatCount }, (_, index) => (
         <Chair key={index} angle={(360 / seatCount) * index - 90} radius={shape === 'long' ? 48 : 45} />
       ))}
       <span className={`floor-tabletop ${shape}`}>
         <strong>{tableName(table)}</strong>
-        <small><Users size={10} /> {capacity} chỗ</small>
+        <small><Users size={10} /> {t('reservation.floor.seats', { count: capacity })}</small>
       </span>
-      <span className="floor-table-status">{preview ? 'Bàn' : label}</span>
+      <span className="floor-table-status">{preview ? t('reservation.floor.table') : label}</span>
     </button>
   );
 }
 
 export function RestaurantFloor({
   tables, matches, selectedTables, searched, loading, error, panelVisible, onTogglePanel, onSelect,
-  showPanelToggle = true, interactive = false, preview = false,
+  showPanelToggle = true, interactive = false, preview = false, isCustomerFacing = false,
 }) {
+  const { t } = useCustomerTranslation(isCustomerFacing);
   const positions = useMemo(() => getTablePositions(tables), [tables]);
   const highlightedIds = new Set(matches.flatMap((option) => option.tables.map((table) => String(table.id))));
   const selectedIds = new Set(selectedTables.map((table) => String(table.id)));
@@ -249,16 +257,16 @@ export function RestaurantFloor({
         <div className="reservation-map-title">
           <span className="reservation-map-icon"><Eye size={18} /></span>
           <div>
-            <h2>Sơ đồ nhà hàng</h2>
-            <p>{preview ? 'Sơ đồ bố trí · Tầng trệt' : 'Góc nhìn từ trên xuống · Tầng trệt'}</p>
+            <h2>{t('reservation.floor.mapTitle')}</h2>
+            <p>{t(preview ? 'reservation.floor.previewSubtitle' : 'reservation.floor.liveSubtitle')}</p>
           </div>
         </div>
         <div className="reservation-map-heading-actions">
-          {!preview && <span className="reservation-map-live"><i /> Cập nhật trực tiếp</span>}
+          {!preview && <span className="reservation-map-live"><i /> {t('reservation.floor.liveUpdate')}</span>}
           {showPanelToggle && (
             <button type="button" className="reservation-panel-toggle" onClick={onTogglePanel}>
               {panelVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-              {panelVisible ? 'Ẩn tìm bàn' : 'Hiện tìm bàn'}
+              {t(panelVisible ? 'reservation.floor.hideSearch' : 'reservation.floor.showSearch')}
             </button>
           )}
         </div>
@@ -266,7 +274,7 @@ export function RestaurantFloor({
 
       <div className="floor-viewport">
        <div className="floor-scroll">
-        <svg className="floor-architecture" viewBox="0 0 1000 680" role="img" aria-label="Mặt bằng nhà hàng">
+        <svg className="floor-architecture" viewBox="0 0 1000 680" role="img" aria-label={t('reservation.floor.floorPlan')}>
           <defs>
             <pattern id="floor-grid" width="28" height="28" patternUnits="userSpaceOnUse">
               <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#e8e5da" strokeWidth="1" />
@@ -280,24 +288,24 @@ export function RestaurantFloor({
           <rect x="39" y="39" width="922" height="602" rx="12" fill="url(#floor-grid)" stroke="#dedacd" strokeWidth="2" />
           <rect x="132" y="18" width="735" height="13" rx="6" fill="#d6eee9" stroke="#77a89e" strokeWidth="2" />
           {[245, 355, 465, 575, 685, 795].map((x) => <line key={x} x1={x} y1="19" x2={x} y2="30" stroke="#fff" strokeWidth="3" />)}
-          <text x="500" y="57" className="floor-zone-label" textAnchor="middle">CỬA SỔ KÍNH · GARDEN VIEW</text>
+          <text x="500" y="57" className="floor-zone-label" textAnchor="middle">{t('reservation.floor.glassWindows')}</text>
 
           <g className="floor-counter">
             <rect x="53" y="104" width="96" height="152" rx="14" />
             <rect x="65" y="117" width="72" height="126" rx="8" />
-            <text x="101" y="169" textAnchor="middle">QUẦY</text>
-            <text x="101" y="187" textAnchor="middle">THU NGÂN</text>
+            <text x="101" y="169" textAnchor="middle">{t('reservation.floor.counter')}</text>
+            <text x="101" y="187" textAnchor="middle">{t('reservation.floor.cashier')}</text>
             <path d="M93 207h16m-8-8v16" />
           </g>
 
           <g className="floor-restroom">
             <rect x="865" y="83" width="91" height="78" rx="11" />
-            <text x="910" y="113" textAnchor="middle">WC</text>
-            <text x="910" y="132" textAnchor="middle">NHÀ VỆ SINH</text>
+            <text x="910" y="113" textAnchor="middle">{t('reservation.floor.restroomAbbreviation')}</text>
+            <text x="910" y="132" textAnchor="middle">{t('reservation.floor.restroom')}</text>
             <path d="M903 145v10" />
           </g>
           <path d="M905 169v52q0 25-26 25h-8v52" className="floor-walkway" markerEnd="url(#walk-arrow)" />
-          <text x="895" y="264" className="floor-small-label" transform="rotate(-90 895 264)" textAnchor="middle">LỐI ĐI</text>
+          <text x="895" y="264" className="floor-small-label" transform="rotate(-90 895 264)" textAnchor="middle">{t('reservation.floor.walkway')}</text>
 
           <g className="floor-plant" transform="translate(114 346)">
             <circle r="23" /><path d="M0 7C-20-5-13-17-3-12 0-27 10-19 8-9 22-14 21 0 7 5Z" />
@@ -312,21 +320,21 @@ export function RestaurantFloor({
             <circle r="20" /><path d="M0 6C-17-4-11-15-2-10 1-23 9-17 7-8 19-12 18 0 6 4Z" />
           </g>
           <rect x="59" y="422" width="101" height="38" rx="14" className="floor-lounge" />
-          <text x="110" y="480" className="floor-small-label" textAnchor="middle">KHU CHỜ</text>
-          <text x="49" y="315" className="floor-zone-label" transform="rotate(-90 49 315)" textAnchor="middle">LỐI ĐI CHÍNH</text>
+          <text x="110" y="480" className="floor-small-label" textAnchor="middle">{t('reservation.floor.waitingArea')}</text>
+          <text x="49" y="315" className="floor-zone-label" transform="rotate(-90 49 315)" textAnchor="middle">{t('reservation.floor.mainWalkway')}</text>
 
           <path d="M417 657A83 83 0 0 1 500 574M583 657A83 83 0 0 0 500 574" className="floor-door" />
           <path d="M500 648v-45" className="floor-walkway" markerEnd="url(#walk-arrow)" />
-          <text x="500" y="631" className="floor-small-label" textAnchor="middle">LỐI VÀO</text>
-          <text x="500" y="670" className="floor-zone-label" textAnchor="middle">ENTRANCE</text>
+          <text x="500" y="631" className="floor-small-label" textAnchor="middle">{t('reservation.floor.entrance')}</text>
+          <text x="500" y="670" className="floor-zone-label" textAnchor="middle">{t('reservation.floor.entrance')}</text>
         </svg>
 
         {loading ? (
-          <div className="floor-state"><Loader2 size={22} className="animate-spin" />Đang tải sơ đồ bàn...</div>
+          <div className="floor-state"><Loader2 size={22} className="animate-spin" />{t('reservation.floor.loading')}</div>
         ) : error ? (
           <div className="floor-state floor-error"><p>{error}</p></div>
         ) : tables.length === 0 ? (
-          <div className="floor-state">Nhà hàng chưa có bàn để hiển thị.</div>
+          <div className="floor-state">{t('reservation.floor.noTables')}</div>
         ) : tables.map((table, index) => {
           const position = positions.get(String(table.id));
           if (!position) return null;
@@ -343,6 +351,7 @@ export function RestaurantFloor({
               disabled={preview || (!interactive && !statusAvailable)}
               onSelect={onSelect}
               preview={preview}
+              t={t}
             />
           );
         })}
@@ -351,15 +360,15 @@ export function RestaurantFloor({
 
       <div className="reservation-map-legend">
         {preview ? (
-          <span className="map-tip">Sơ đồ giới thiệu các vị trí bàn, không hiển thị tình trạng đặt chỗ.</span>
+          <span className="map-tip">{t('reservation.floor.previewTip')}</span>
         ) : (
           <>
-            <span><i className="legend-free" /> Trống</span>
-            <span><i className="legend-booked" /> Đã đặt</span>
-            <span><i className="legend-held" /> Giữ chỗ</span>
-            <span><i className="legend-occupied" /> Đang có khách</span>
-            <span><i className="legend-selected" /> Đang chọn</span>
-            <span className="map-tip">Mỗi màu biểu thị một trạng thái bàn riêng biệt.</span>
+            <span><i className="legend-free" /> {t('reservation.floor.available')}</span>
+            <span><i className="legend-booked" /> {t('reservation.floor.booked')}</span>
+            <span><i className="legend-held" /> {t('reservation.floor.held')}</span>
+            <span><i className="legend-occupied" /> {t('reservation.floor.occupied')}</span>
+            <span><i className="legend-selected" /> {t('reservation.floor.selected')}</span>
+            <span className="map-tip">{t('reservation.floor.legendTip')}</span>
           </>
         )}
       </div>
@@ -369,6 +378,7 @@ export function RestaurantFloor({
 
 export default function ReservationPage({ embedded = false, tables = [], loading = false, tablesError = '' }) {
   const { user } = useAuth();
+  const { t, locale } = useCustomerTranslation();
   const [form, setForm] = useState({
     party_size: '',
     reservation_date: '',
@@ -433,7 +443,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
       }));
       setSuggestions([]);
       setSelectedSuggestion(null);
-      setError('Ngày đặt bàn đã qua giờ phục vụ. Vui lòng chọn ngày và giờ trong tương lai.');
+      setError(t('reservation.expiredReservationDate'));
       return;
     }
 
@@ -593,7 +603,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
     if (table.status !== 'trong') return;
     const partySize = Number(form.party_size);
     if (!partySize) {
-      setError('Nhập số khách trước, sau đó chọn bàn phù hợp trên sơ đồ.');
+      setError(t('reservation.partySizeRequired'));
       return;
     }
     setError('');
@@ -602,14 +612,14 @@ export default function ReservationPage({ embedded = false, tables = [], loading
         option.is_combined && option.tables.some((candidate) => String(candidate.id) === String(table.id))
       );
       if (combo) setSelectedSuggestion(combo);
-      else setError(`Bàn ${tableName(table)} chỉ có ${table.capacity} chỗ. Hãy chọn gợi ý ghép bàn ở cột bên phải.`);
+      else setError(t('reservation.tableTooSmall', { name: tableName(table), capacity: table.capacity }));
       return;
     }
     const option = suggestions.find((suggestion) =>
       !suggestion.is_combined && String(suggestion.tables[0]?.id) === String(table.id)
     );
     if (option) setSelectedSuggestion(option);
-    else setError(`Bàn ${tableName(table)} không nằm trong kết quả tìm kiếm hiện tại.`);
+    else setError(t('reservation.tableNotInSearch', { name: tableName(table) }));
   }
 
   async function handleSearch(event) {
@@ -618,19 +628,19 @@ export default function ReservationPage({ embedded = false, tables = [], loading
     setSuggestions([]);
     setSelectedSuggestion(null);
     if (!form.party_size || Number(form.party_size) < 1) {
-      setError('Vui lòng nhập số lượng khách hợp lệ.');
+      setError(t('reservation.invalidPartySize'));
       return;
     }
     if (!form.reservation_date || !form.reservation_time) {
-      setError('Vui lòng chọn ngày và giờ đặt bàn.');
+      setError(t('reservation.dateTimeRequired'));
       return;
     }
     if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, now, openTime, closeTime)) {
-      setError(`Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ ${openTime}–${closeTime}.`);
+      setError(t('reservation.dateTimeMustBeFuture', { open: openTime, close: closeTime }));
       return;
     }
     if (!isWithinReservationHours(form.reservation_time, openTime, closeTime)) {
-      setError(`Nhà hàng chỉ nhận đặt bàn trong khung giờ ${openTime}–${closeTime}.`);
+      setError(t('reservation.outsideServiceHours', { open: openTime, close: closeTime }));
       return;
     }
     if (tablesError) {
@@ -689,7 +699,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
       setSuggestions(options);
       setSelectedSuggestion(options[0] || null);
       if (!options.length) {
-        setError(`Không có bàn đơn hoặc nhóm bàn liền kề còn trống đủ ${partySize} chỗ. Vui lòng thử thời gian khác.`);
+        setError(t('reservation.noTablesForParty', { count: partySize }));
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -700,19 +710,19 @@ export default function ReservationPage({ embedded = false, tables = [], loading
 
   async function handleCreateReservation() {
     if (!isReservationDateTimeFuture(form.reservation_date, form.reservation_time, new Date(), openTime, closeTime)) {
-      setError(`Ngày giờ đặt bàn phải ở trong tương lai và trong khung giờ phục vụ ${openTime}–${closeTime}.`);
+      setError(t('reservation.dateTimeMustBeFuture', { open: openTime, close: closeTime }));
       return;
     }
     if (!isWithinReservationHours(form.reservation_time, openTime, closeTime)) {
-      setError(`Nhà hàng chỉ nhận đặt bàn trong khung giờ ${openTime}–${closeTime}.`);
+      setError(t('reservation.outsideServiceHours', { open: openTime, close: closeTime }));
       return;
     }
     if (!selectedSuggestion) {
-      setError('Vui lòng tìm và chọn bàn trước khi tiếp tục.');
+      setError(t('reservation.selectTableFirst'));
       return;
     }
     if (!form.phone.trim()) {
-      setError('Vui lòng nhập số điện thoại để nhà hàng xác nhận đặt bàn.');
+      setError(t('reservation.phoneRequired'));
       return;
     }
     setError('');
@@ -763,11 +773,11 @@ export default function ReservationPage({ embedded = false, tables = [], loading
     <div className={`reservation-page ${embedded ? 'reservation-page-embedded' : ''}`}>
       <header className="reservation-hero">
         <div>
-          <p className="reservation-eyebrow">Dành riêng cho khoảnh khắc của bạn</p>
-          <h1>Chọn góc riêng của bạn</h1>
-          <p className="reservation-hero-copy">Khám phá không gian, chọn chiếc bàn phù hợp và đặt món trước cho buổi gặp gỡ sắp tới.</p>
+          <p className="reservation-eyebrow">{t('reservation.eyebrow')}</p>
+          <h1>{t('reservation.title')}</h1>
+          <p className="reservation-hero-copy">{t('reservation.description')}</p>
         </div>
-        <Link to="/my-reservations" className="reservation-history-link"><CalendarDays size={15} /> Lịch sử đặt bàn</Link>
+        <Link to="/my-reservations" className="reservation-history-link"><CalendarDays size={15} /> {t('reservation.reservationHistory')}</Link>
       </header>
 
       <main className={`reservation-layout${!panelVisible ? ' panel-hidden' : ''}`}>
@@ -781,21 +791,22 @@ export default function ReservationPage({ embedded = false, tables = [], loading
           panelVisible={panelVisible}
           onTogglePanel={() => setPanelVisible((visible) => !visible)}
           onSelect={selectTable}
+          isCustomerFacing
         />
 
         {panelVisible && (
           <aside className="reservation-panel">
             <div className="reservation-panel-head">
-              <div className="reservation-panel-kicker"><span /> ĐẶT CHỖ TRỰC TUYẾN</div>
-              <h2>{hold ? 'Đặt bàn của bạn' : 'Tìm bàn phù hợp'}</h2>
-              <p>Chọn thời gian và số khách. Chúng tôi sẽ gợi ý vị trí tốt nhất cho bạn.</p>
+              <div className="reservation-panel-kicker"><span /> {t('reservation.onlineBooking')}</div>
+              <h2>{hold ? t('reservation.yourReservation') : t('reservation.findTable')}</h2>
+              <p>{t('reservation.formIntro')}</p>
             </div>
 
             {!hold ? (
               <>
                 <form className="reservation-form" onSubmit={handleSearch}>
                   <label className="reservation-field">
-                    <span className="reservation-label">Số lượng khách <small>Số ghế cần tìm</small></span>
+                    <span className="reservation-label">{t('reservation.guestCount')} <small>{t('reservation.seatCountHint')}</small></span>
                     <span className="reservation-input-wrap">
                       <Users size={16} />
                       <input
@@ -805,12 +816,12 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                         required
                         value={form.party_size}
                         onChange={(event) => updateForm('party_size', event.target.value)}
-                        placeholder="Ví dụ: 4"
+                        placeholder={t('reservation.guestCountPlaceholder')}
                       />
                     </span>
                   </label>
                   <label className="reservation-field">
-                    <span className="reservation-label">Ngày đặt bàn</span>
+                    <span className="reservation-label">{t('reservation.reservationDate')}</span>
                     <span className="reservation-input-wrap">
                       <CalendarDays size={16} />
                       <input
@@ -827,17 +838,17 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                       />
                     </span>
                     {minimumReservationDate > today && (
-                      <small className="text-xs text-amber-700">Hôm nay đã hết giờ phục vụ; ngày sớm nhất có thể đặt là ngày mai.</small>
+                      <small className="text-xs text-amber-700">{t('reservation.todayClosed')}</small>
                     )}
                   </label>
                   <div className="reservation-time-phone">
                     <label className="reservation-field">
-                      <span className="reservation-label">Giờ đến</span>
+                      <span className="reservation-label">{t('reservation.arrivalTime')}</span>
                       <span className="reservation-input-wrap reservation-time-control">
                         <Clock3 size={16} />
                         <span className="reservation-time-selects">
                           <select
-                            aria-label="Giờ"
+                            aria-label={t('reservation.hour')}
                             value={reservationHour}
                             onChange={(event) => updateReservationTime(event.target.value, reservationMinute)}
                           >
@@ -845,7 +856,7 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                           </select>
                           <span aria-hidden="true">:</span>
                           <select
-                            aria-label="Phút"
+                            aria-label={t('reservation.minute')}
                             value={reservationMinute}
                             onChange={(event) => updateReservationTime(reservationHour, event.target.value)}
                           >
@@ -853,10 +864,10 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                           </select>
                         </span>
                       </span>
-                      <small className="text-xs text-slate-500">Giờ phục vụ: {openTime}–{closeTime}</small>
+                      <small className="text-xs text-slate-500">{t('reservation.serviceHours', { open: openTime, close: closeTime })}</small>
                     </label>
                     <label className="reservation-field">
-                      <span className="reservation-label">Số điện thoại</span>
+                      <span className="reservation-label">{t('reservation.phone')}</span>
                       <span className="reservation-input-wrap">
                         <MapPin size={16} />
                         <input
@@ -864,15 +875,15 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                           required
                           value={form.phone}
                           onChange={(event) => updateForm('phone', event.target.value)}
-                          placeholder="09xxxxxxxx"
+                          placeholder={t('reservation.phonePlaceholder')}
                         />
                       </span>
-                      {profilePhoneError && <small className="text-xs text-clay-600">Không thể tải số điện thoại từ hồ sơ: {profilePhoneError}</small>}
+                      {profilePhoneError && <small className="text-xs text-clay-600">{t('reservation.profilePhoneError', { error: profilePhoneError })}</small>}
                     </label>
                   </div>
                   <button type="submit" disabled={searching || loading || tables.length === 0 || bookingDateTimeUnavailable} className="reservation-primary">
                     {searching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                    Tìm bàn phù hợp
+                    {t('reservation.searchTables')}
                   </button>
                 </form>
 
@@ -882,12 +893,12 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                   {suggestions.length ? (
                     <>
                       <div className="reservation-results-heading">
-                        <strong>{suggestions.some((option) => !option.is_combined) ? 'Bàn trống phù hợp' : 'Gợi ý ghép bàn'}</strong>
-                        <span>{suggestions.length} lựa chọn</span>
+                        <strong>{t(suggestions.some((option) => !option.is_combined) ? 'reservation.suitableTables' : 'reservation.combinedSuggestions')}</strong>
+                        <span>{t('reservation.choices', { count: suggestions.length })}</span>
                       </div>
                       {!suggestions.some((option) => !option.is_combined) && (
                         <p className="reservation-combo-note">
-                          Không có bàn đơn đủ {form.party_size} chỗ. Các bàn gợi ý nằm gần nhau trên sơ đồ.
+                          {t('reservation.notEnoughSingleTables', { count: form.party_size })}
                         </p>
                       )}
                       <div className="reservation-option-list">
@@ -903,25 +914,27 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                             <span className="reservation-option-info">
                               <strong>{option.is_combined
                                 ? option.tables.map(tableName).join(' + ')
-                                : `Bàn ${tableName(option.tables[0])}`}
+                                : t('reservation.floor.tableTitle', { name: tableName(option.tables[0]), count: option.total_capacity })}
                               </strong>
-                              <small>{option.is_combined ? 'Ghép bàn liền kề' : 'Bàn trống · Chọn vị trí'}</small>
+                              <small>{t(option.is_combined ? 'reservation.combineAdjacentTables' : 'reservation.availableTableSelect')}</small>
                             </span>
-                            <span className="reservation-option-capacity">{option.total_capacity} chỗ</span>
+                            <span className="reservation-option-capacity">{t('reservation.tableCapacity', { count: option.total_capacity })}</span>
                           </button>
                         ))}
                       </div>
                       <div className="reservation-selected-summary">
                         <Check size={14} />
-                        Đang chọn {selectedSuggestion?.tables.map(tableName).join(' + ') || 'chưa chọn bàn'}
+                        {selectedSuggestion
+                          ? t('reservation.selecting', { tables: selectedSuggestion.tables.map(tableName).join(' + ') })
+                          : t('reservation.notSelected')}
                       </div>
                     </>
                   ) : (
                     <div className="reservation-results-empty">
                       <MapPin size={20} />
                       {searched && error
-                        ? `Chưa tìm được bàn phù hợp cho ${form.party_size} khách.`
-                        : 'Nhập thông tin và tìm bàn để xem các vị trí còn trống.'}
+                        ? t('reservation.noSuitableTableForGuests', { count: form.party_size })
+                        : t('reservation.searchPrompt')}
                     </div>
                   )}
                 </div>
@@ -929,20 +942,20 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                 <section className="preorder-section">
                   <button type="button" className="preorder-toggle" onClick={() => setShowDishMenu((visible) => !visible)} aria-expanded={showDishMenu}>
                     <span className="preorder-toggle-icon"><UtensilsCrossed size={16} /></span>
-                    <span className="preorder-toggle-copy"><strong>Đặt món trước</strong><small>Tùy chọn · Nhà hàng sẽ gọi xác nhận</small></span>
+                    <span className="preorder-toggle-copy"><strong>{t('reservation.preorder')}</strong><small>{t('reservation.optionalCallConfirm')}</small></span>
                     {selectedDishCount > 0 && <span className="preorder-count">{selectedDishCount}</span>}
                     <ChevronDown size={16} className={`preorder-chevron${showDishMenu ? ' open' : ''}`} />
                   </button>
 
                   {showDishMenu && (
                     <div className="preorder-menu">
-                      <p className="preorder-disclaimer">Món đặt trước cần thời gian chuẩn bị. Thu ngân sẽ gọi bạn xác nhận trước giờ đặt bàn để chuẩn bị món ăn.</p>
+                      <p className="preorder-disclaimer">{t('reservation.preorderDisclaimer')}</p>
                       {dishesLoading ? (
-                        <div className="preorder-loading"><Loader2 size={17} className="animate-spin" />Đang tải thực đơn...</div>
+                        <div className="preorder-loading"><Loader2 size={17} className="animate-spin" />{t('reservation.loadingMenu')}</div>
                       ) : dishesError ? (
                         <Alert type="error">{dishesError}</Alert>
                       ) : dishes.length === 0 ? (
-                        <p className="preorder-empty">Chưa có món ăn khả dụng.</p>
+                        <p className="preorder-empty">{t('reservation.noAvailableDishes')}</p>
                       ) : (
                         <>
                           <div className="preorder-dish-list">
@@ -959,23 +972,23 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                                     <span className="preorder-dish-info">
                                       <strong>{dish.name}</strong>
                                       {dish.description && <small>{dish.description}</small>}
-                                      <b>{Number(dish.price).toLocaleString('vi-VN')}đ</b>
+                                      <b>{formatCurrency(dish.price, locale)}</b>
                                     </span>
                                     <span className={`preorder-check${selection ? ' checked' : ''}`}>{selection && <Check size={13} />}</span>
                                   </button>
                                   {selection && (
                                     <div className="preorder-customize">
                                       <div className="preorder-quantity">
-                                        <button type="button" onClick={() => updateDish(dish.id, 'quantity', selection.quantity - 1)} disabled={selection.quantity <= 1} aria-label={`Giảm số lượng ${dish.name}`}><Minus size={12} /></button>
+                                        <button type="button" onClick={() => updateDish(dish.id, 'quantity', selection.quantity - 1)} disabled={selection.quantity <= 1} aria-label={t('reservation.decreaseQuantity', { name: dish.name })}><Minus size={12} /></button>
                                         <span>{selection.quantity}</span>
-                                        <button type="button" onClick={() => updateDish(dish.id, 'quantity', selection.quantity + 1)} aria-label={`Tăng số lượng ${dish.name}`}><Plus size={12} /></button>
+                                        <button type="button" onClick={() => updateDish(dish.id, 'quantity', selection.quantity + 1)} aria-label={t('reservation.increaseQuantity', { name: dish.name })}><Plus size={12} /></button>
                                       </div>
                                       <input
                                         type="text"
                                         value={selection.note}
                                         onChange={(event) => updateDish(dish.id, 'note', event.target.value)}
-                                        placeholder="Ghi chú món"
-                                        aria-label={`Ghi chú cho ${dish.name}`}
+                                        placeholder={t('reservation.dishNotePlaceholder')}
+                                        aria-label={t('reservation.dishNoteLabel', { name: dish.name })}
                                       />
                                     </div>
                                   )}
@@ -985,18 +998,18 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                           </div>
                           {dishes.length > 4 && (
                             <button type="button" className="preorder-show-more" onClick={() => setShowAllDishes((visible) => !visible)}>
-                              {showAllDishes ? 'Thu gọn thực đơn' : `Xem tất cả ${dishes.length} món`}
+                              {showAllDishes ? t('reservation.collapseMenu') : t('reservation.viewAllDishes', { count: dishes.length })}
                             </button>
                           )}
                           {selectedDishCount > 0 && (
                             <>
                               <div className="preorder-total">
-                                <span><ShoppingBag size={14} /> {selectedDishCount} món đã chọn</span>
-                                <strong>{selectedDishTotal.toLocaleString('vi-VN')}đ</strong>
+                                <span><ShoppingBag size={14} /> {t('reservation.selectedDishes', { count: selectedDishCount })}</span>
+                                <strong>{formatCurrency(selectedDishTotal, locale)}</strong>
                               </div>
                               <div className="preorder-total">
-                                <span>Tiền cọc (50%)</span>
-                                <strong>{Math.round(selectedDishTotal / 2).toLocaleString('vi-VN')}đ</strong>
+                                <span>{t('reservation.depositHalf')}</span>
+                                <strong>{formatCurrency(Math.round(selectedDishTotal / 2), locale)}</strong>
                               </div>
                             </>
                           )}
@@ -1013,10 +1026,10 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                   className="reservation-confirm-button"
                 >
                   {holding ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                  {holding ? 'Đang giữ bàn...' : 'Tiếp tục đặt bàn'}
+                  {holding ? t('reservation.holding') : t('reservation.continueBooking')}
                   <ArrowRight size={15} />
                 </button>
-                <p className="reservation-trust"><ShieldCheck size={14} /> Chỉ đặt bàn: cọc 50.000đ. Có đặt món trước: cọc 50% tổng tiền món. Trước giờ đặt bàn 30 phút quý khách sẽ được liên hệ để xác nhận trước khi món được chuẩn bị. Nếu không đến quán sau thời gian đặt bàn thì tiền cọc sẽ bị mất và bàn đặt sẽ được trả về trạng thái trống</p>
+                <p className="reservation-trust"><ShieldCheck size={14} /> {t('reservation.onlyDepositPolicy', { deposit: formatCurrency(50000, locale) })}</p>
               </>
             ) : (
               <div className="reservation-hold-content">
@@ -1024,45 +1037,48 @@ export default function ReservationPage({ embedded = false, tables = [], loading
                 {expired ? (
                   <div className="reservation-hold-status">
                     <span className="hold-status-icon expired"><X size={22} /></span>
-                    <h3>Đã hết thời gian giữ bàn</h3>
-                    <p>Bàn đã được trả về trạng thái trống. Bạn có thể tìm và đặt bàn lại.</p>
-                    <button type="button" onClick={resetReservation} className="reservation-primary">Đặt bàn lại</button>
+                    <h3>{t('reservation.expiredTitle')}</h3>
+                    <p>{t('reservation.expiredDescription')}</p>
+                    <button type="button" onClick={resetReservation} className="reservation-primary">{t('reservation.bookAgain')}</button>
                   </div>
                 ) : confirmed ? (
                   <div className="reservation-hold-status">
                     <span className="hold-status-icon"><CheckCircle2 size={23} /></span>
-                    <h3>Đặt bàn thành công!</h3>
-                    <p>Cọc đã được xác nhận. Nhà hàng sẽ liên hệ về món đặt trước nếu bạn đã chọn món.</p>
-                    <Link to="/my-reservations" className="reservation-primary"><CalendarDays size={15} /> Xem đặt bàn của tôi</Link>
-                    <button type="button" onClick={resetReservation} className="reservation-reset-link">Đặt bàn khác</button>
+                    <h3>{t('reservation.successTitle')}</h3>
+                    <p>{t('reservation.depositConfirmed')}</p>
+                    <Link to="/my-reservations" className="reservation-primary"><CalendarDays size={15} /> {t('reservation.viewMyReservation')}</Link>
+                    <button type="button" onClick={resetReservation} className="reservation-reset-link">{t('reservation.anotherReservation')}</button>
                   </div>
                 ) : (
                   <>
                     <div className="reservation-hold-summary">
-                      <span>MÃ ĐẶT BÀN <strong>#{hold.reservation_id}</strong></span>
-                      <span>{form.reservation_date} · {form.reservation_time}</span>
-                      <span>Bàn {selectedSuggestion?.tables.map(tableName).join(' + ')} · {form.party_size} khách</span>
+                      <span>{t('reservation.reservationCode')} <strong>#{hold.reservation_id}</strong></span>
+                      <span>{formatDate(form.reservation_date, locale)} · {form.reservation_time}</span>
+                      <span>{t('reservation.tableForGuests', {
+                        tables: selectedSuggestion?.tables.map(tableName).join(' + '),
+                        count: form.party_size,
+                      })}</span>
                     </div>
                     <div className="reservation-deposit-card">
-                      <h3>Quét mã để thanh toán cọc</h3>
+                      <h3>{t('reservation.scanDeposit')}</h3>
                       {qrLoading ? (
-                        <div className="reservation-qr-loading"><Loader2 size={22} className="animate-spin" />Đang tải mã thanh toán...</div>
+                        <div className="reservation-qr-loading"><Loader2 size={22} className="animate-spin" />{t('reservation.loadingQr')}</div>
                       ) : depositQr?.qr_url ? (
-                        <img src={depositQr.qr_url} alt="Mã QR thanh toán tiền cọc" />
+                        <img src={depositQr.qr_url} alt={t('reservation.qrDepositAlt')} />
                       ) : (
-                        <p className="reservation-qr-error">Chưa lấy được mã QR. Vui lòng tải lại hoặc liên hệ nhà hàng.</p>
+                        <p className="reservation-qr-error">{t('reservation.qrUnavailable')}</p>
                       )}
-                      {depositQr?.amount != null && <p className="reservation-deposit-amount">{Number(depositQr.amount).toLocaleString('vi-VN')}đ</p>}
-                      {depositQr?.transaction_code && <p className="reservation-transfer-code">Nội dung: <strong>{depositQr.transaction_code}</strong></p>}
+                      {depositQr?.amount != null && <p className="reservation-deposit-amount">{formatCurrency(depositQr.amount, locale)}</p>}
+                      {depositQr?.transaction_code && <p className="reservation-transfer-code">{t('reservation.transferContent')} <strong>{depositQr.transaction_code}</strong></p>}
                     </div>
-                    <div className="reservation-countdown"><Clock3 size={16} /> Thời gian giữ bàn <strong>{remainingSeconds !== null ? countdownText(remainingSeconds) : '--:--'}</strong></div>
-                    <p className="reservation-deposit-note">Sau khi chuyển khoản, hệ thống sẽ tự cập nhật khi SePay xác nhận hoặc thu ngân xác nhận thủ công.</p>
+                    <div className="reservation-countdown"><Clock3 size={16} /> {t('reservation.holdTime')} <strong>{remainingSeconds !== null ? countdownText(remainingSeconds) : '--:--'}</strong></div>
+                    <p className="reservation-deposit-note">{t('reservation.depositUpdateInfo')}</p>
                   </>
                 )}
               </div>
             )}
 
-            <div className="reservation-panel-foot"><ShieldCheck size={15} /> Thông tin của bạn được sử dụng để xác nhận đặt chỗ.</div>
+            <div className="reservation-panel-foot"><ShieldCheck size={15} /> {t('reservation.privacyNote')}</div>
           </aside>
         )}
       </main>

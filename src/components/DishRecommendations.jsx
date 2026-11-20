@@ -3,8 +3,10 @@ import { ArrowRight, Loader2, RefreshCw, Sparkles, UtensilsCrossed } from 'lucid
 import { Link } from 'react-router-dom';
 import { recommendationsApi } from '../api/recommendations';
 import { getErrorMessage } from '../api/client';
+import { useCustomerTranslation } from '../i18n/useCustomerTranslation';
+import { formatCurrency } from '../i18n/formatters';
 
-function RecommendationGrid({ recommendations, compact = false }) {
+function RecommendationGrid({ recommendations, compact = false, t, locale }) {
   return (
     <div className={compact ? 'grid grid-cols-1 gap-3' : 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'}>
       {recommendations.map((dish) => (
@@ -16,7 +18,7 @@ function RecommendationGrid({ recommendations, compact = false }) {
         >
           <Link
             to={`/dishes/${dish.dish_id}`}
-            aria-label={`Xem món ${dish.name}`}
+            aria-label={t('recommendations.viewDish', { name: dish.name })}
             className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ${
               compact ? 'h-20 w-24' : 'aspect-[4/3]'
             }`}
@@ -34,19 +36,19 @@ function RecommendationGrid({ recommendations, compact = false }) {
           </Link>
           <div className="flex min-w-0 flex-1 flex-col">
             <p className="text-xs font-semibold uppercase tracking-wide text-basil-700">
-              {dish.category || 'Món ngon'}
+              {dish.category || t('recommendations.categoryFallback')}
             </p>
             <h3 className="mt-1 line-clamp-2 font-display text-base font-semibold text-ink">
               {dish.name}
             </h3>
             <p className="mt-2 font-mono text-sm font-semibold text-ink">
-              {Number(dish.price).toLocaleString('vi-VN')}đ
+              {formatCurrency(dish.price, locale)}
             </p>
             <Link
               to={`/dishes/${dish.dish_id}`}
               className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-basil-700 hover:text-basil-800"
             >
-              Xem món <ArrowRight size={15} />
+              {t('recommendations.view')} <ArrowRight size={15} />
             </Link>
           </div>
         </article>
@@ -60,6 +62,7 @@ export default function DishRecommendations({
   compact = false,
   excludeDishId,
 }) {
+  const { t, locale } = useCustomerTranslation();
   const [personalizedRecommendations, setPersonalizedRecommendations] = useState([]);
   const [popularRecommendations, setPopularRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +96,7 @@ export default function DishRecommendations({
           (personalizedData && !Array.isArray(personalizedData.recommendations))
           || !Array.isArray(popularData?.recommendations)
         ) {
-          throw new Error('Dữ liệu gợi ý món ăn không hợp lệ.');
+          throw new Error(t('recommendations.invalidData'));
         }
         if (active) {
           const isVisibleDish = (dish) => (
@@ -120,7 +123,7 @@ export default function DishRecommendations({
 
     loadRecommendations();
     return () => { active = false; };
-  }, [excludeDishId, isCustomer, reloadKey]);
+  }, [excludeDishId, isCustomer, reloadKey, t]);
 
   const sidebarRecommendations = [
     ...personalizedRecommendations,
@@ -138,7 +141,7 @@ export default function DishRecommendations({
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-basil-700">
             <Sparkles size={15} aria-hidden="true" />
-            {isCustomer ? 'Dành riêng cho bạn' : 'Món được yêu thích'}
+            {isCustomer ? t('recommendations.forYou') : t('recommendations.popular')}
           </p>
           <h2
             id="dish-recommendations-heading"
@@ -146,14 +149,14 @@ export default function DishRecommendations({
               compact ? 'text-lg' : 'text-xl sm:text-2xl'
             }`}
           >
-            Gợi ý món ăn
+            {t('recommendations.title')}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             {loading
-              ? 'Đang tìm món phù hợp...'
+              ? t('recommendations.searching')
               : isCustomer
-                ? 'Gợi ý cá nhân và các món phổ biến trong quán'
-                : 'Món phổ biến trong quán'}
+                ? t('recommendations.personalizedAndPopular')
+                : t('recommendations.popularAtRestaurant')}
           </p>
         </div>
         {!isCustomer && (
@@ -161,7 +164,7 @@ export default function DishRecommendations({
             to="/login"
             className="text-sm font-semibold text-basil-700 hover:text-basil-800"
           >
-            Đăng nhập để nhận gợi ý cá nhân
+            {t('recommendations.loginForPersonalized')}
           </Link>
         )}
       </div>
@@ -170,7 +173,7 @@ export default function DishRecommendations({
         {loading ? (
           <div className="flex justify-center py-8" role="status" aria-live="polite">
             <Loader2 className="animate-spin text-basil-600" size={24} />
-            <span className="sr-only">Đang tải gợi ý món ăn</span>
+            <span className="sr-only">{t('recommendations.loading')}</span>
           </div>
         ) : error ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-clay-50 p-4 text-sm text-clay-700">
@@ -181,17 +184,17 @@ export default function DishRecommendations({
               className="inline-flex items-center gap-2 font-semibold hover:text-clay-800"
             >
               <RefreshCw size={15} />
-              Thử lại
+              {t('recommendations.retry')}
             </button>
           </div>
         ) : (compact
           ? sidebarRecommendations.length === 0
           : personalizedRecommendations.length === 0 && popularRecommendations.length === 0) ? (
           <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-            Hiện chưa có món phù hợp để gợi ý. Bạn có thể xem toàn bộ thực đơn bên dưới.
+            {t('recommendations.empty')}
           </p>
         ) : compact ? (
-          <RecommendationGrid recommendations={sidebarRecommendations} compact />
+          <RecommendationGrid recommendations={sidebarRecommendations} compact t={t} locale={locale} />
         ) : (
           <div className="space-y-7">
             {personalizedRecommendations.length > 0 && (
@@ -200,9 +203,9 @@ export default function DishRecommendations({
                   id="personalized-recommendations-heading"
                   className="mb-3 font-display text-lg font-semibold text-ink"
                 >
-                  Gợi ý theo sở thích của bạn
+                  {t('recommendations.personalizedTitle')}
                 </h3>
-                <RecommendationGrid recommendations={personalizedRecommendations} />
+                <RecommendationGrid recommendations={personalizedRecommendations} t={t} locale={locale} />
               </section>
             )}
             {popularRecommendations.length > 0 && (
@@ -211,9 +214,9 @@ export default function DishRecommendations({
                   id="popular-recommendations-heading"
                   className="mb-3 font-display text-lg font-semibold text-ink"
                 >
-                  Món phổ biến trong quán
+                  {t('recommendations.popularTitle')}
                 </h3>
-                <RecommendationGrid recommendations={popularRecommendations} />
+                <RecommendationGrid recommendations={popularRecommendations} t={t} locale={locale} />
               </section>
             )}
           </div>

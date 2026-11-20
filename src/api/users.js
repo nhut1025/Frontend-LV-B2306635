@@ -3,6 +3,10 @@ import client from './client';
 export const usersApi = {
   getProfile: () => client.get('/users/me'),
   updateProfile: (data) => client.put('/users/me', data),
+  listRefundBankAccounts: () => client.get('/users/me/refund-bank-accounts'),
+  createRefundBankAccount: (data) => client.post('/users/me/refund-bank-accounts', data),
+  updateRefundBankAccount: (id, data) => client.put(`/users/me/refund-bank-accounts/${id}`, data),
+  deleteRefundBankAccount: (id) => client.delete(`/users/me/refund-bank-accounts/${id}`),
   uploadAvatar: (data) => client.post('/users/me/avatar', data),
   changePassword: (data) => client.put('/users/me/password', data),
   getReservationSummary: () => client.get('/users/me/reservation-summary'),
